@@ -1,0 +1,75 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { sanitize } from "@/lib/sanitize";
+
+// GET all forms for admin
+export async function GET(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const { allowed } = checkRateLimit(`forms:${ip}`);
+  if (!allowed) {
+    return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
+  }
+
+  const session = await getSession();
+  if (!session || session.role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const forms = await prisma.form.findMany({
+    where: { authorId: session.userId },
+    include: {
+      _count: { select: { responses: true, questions: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return NextResponse.json(forms);
+}
+
+// CREATE a new form
+export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const { allowed } = checkRateLimit(`forms:${ip}`);
+  if (!allowed) {
+    return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
+  }
+
+  const session = await getSession();
+  if (!session || session.role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const title = sanitize(body.title || "Untitled Form");
+    const description = sanitize(body.description || "");
+
+    const form = await prisma.form.create({
+      data: {
+        title,
+        description,
+        authorId: session.userId,
+        // Auto-create the required Phone Number field
+        questions: {
+          create: {
+            type: "SHORT_TEXT",
+            label: "Phone Number",
+            isRequired: true,
+            order: 0,
+            config: JSON.stringify({ isPhoneNumber: true, locked: true }),
+          },
+        },
+      },
+      include: { questions: { include: { options: true } } },
+    });
+
+    return NextResponse.json(form, { status: 201 });
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to create form." },
+      { status: 500 }
+    );
+  }
+}

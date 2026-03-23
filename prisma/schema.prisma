@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("USER") // USER | ADMIN
+  createdAt    DateTime @default(now())
+  forms        Form[]
+}
+
+model Form {
+  id          String     @id @default(uuid())
+  title       String
+  description String     @default("")
+  published   Boolean    @default(false)
+  authorId    String
+  author      User       @relation(fields: [authorId], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  questions   Question[]
+  responses   Response[]
+}
+
+model Question {
+  id         String   @id @default(uuid())
+  formId     String
+  form       Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  type       String   // SHORT_TEXT, PARAGRAPH, MULTIPLE_CHOICE, CHECKBOX, DROPDOWN, FILE_UPLOAD, LINEAR_SCALE, RATING, MULTIPLE_CHOICE_GRID, CHECKBOX_GRID, DATE, TIME
+  label      String
+  isRequired Boolean  @default(false)
+  order      Int
+  options    Option[]
+  answers    Answer[]
+
+  // For LINEAR_SCALE: min/max labels stored as config JSON
+  // For GRID types: row/column labels stored in options with a "group" field
+  config     String   @default("{}") // JSON string for extra config
+}
+
+model Option {
+  id         String   @id @default(uuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value      String
+  order      Int
+  group      String   @default("default") // "default" for regular options, "row"/"column" for grids
+}
+
+model Response {
+  id          String   @id @default(uuid())
+  formId      String
+  form        Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  editToken   String   @unique @default(uuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  answers     Answer[]
+}
+
+model Answer {
+  id         String   @id @default(uuid())
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value      String   @default("") // JSON string for complex answers (grids, checkboxes, etc.)
+}
