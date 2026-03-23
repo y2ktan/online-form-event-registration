@@ -17,15 +17,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const forms = await prisma.form.findMany({
-    where: { authorId: session.userId },
-    include: {
-      _count: { select: { responses: true, questions: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  try {
+    const forms = await prisma.form.findMany({
+      where: { authorId: session.userId },
+      include: {
+        _count: { select: { responses: true, questions: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-  return NextResponse.json(forms);
+    return NextResponse.json(forms);
+  } catch (err) {
+    console.error("GET /api/forms error:", err);
+    return NextResponse.json(
+      { error: "Failed to fetch forms." },
+      { status: 500 }
+    );
+  }
 }
 
 // CREATE a new form
@@ -66,7 +74,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(form, { status: 201 });
-  } catch {
+  } catch (err) {
+    console.error("POST /api/forms error:", err);
     return NextResponse.json(
       { error: "Failed to create form." },
       { status: 500 }

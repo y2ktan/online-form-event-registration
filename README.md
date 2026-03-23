@@ -1,36 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Form Builder Admin
 
-## Getting Started
+An admin-controlled form builder built with Next.js, Prisma, SQLite, and Tailwind CSS.
 
-First, run the development server:
+## Tech Stack
+
+- **Framework:** Next.js 16 (App Router)
+- **Database:** SQLite via Prisma ORM
+- **Styling:** Tailwind CSS
+- **Auth:** JWT with HTTP-only cookies
+- **CAPTCHA:** Cloudflare Turnstile (optional)
+
+## Getting Started (Clean Slate)
+
+### 1. Clone and install dependencies
+
+```bash
+git clone <repo-url>
+cd my-ai-registration
+npm install
+```
+
+### 2. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set your values:
+
+| Variable | Description | Required |
+|---|---|---|
+| `DATABASE_URL` | SQLite database path | Yes (default: `file:./dev.db`) |
+| `JWT_SECRET` | Secret key for session tokens | Yes |
+| `INITIAL_ADMIN_PASSWORD` | Password for the seeded admin user | No (default: `admin123`) |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key | No |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key | No |
+
+### 3. One-command setup
+
+```bash
+npm run setup
+```
+
+This installs dependencies, generates the Prisma client, syncs the database schema, and seeds the admin user.
+
+### 4. Start the development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The database is automatically synced on every `npm run dev` and `npm run build`, so you never need to manually run migrations.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 5. Log in
 
-## Learn More
+- **Email:** `admin@formbuilder.com`
+- **Password:** value of `INITIAL_ADMIN_PASSWORD` (default: `admin123`)
 
-To learn more about Next.js, take a look at the following resources:
+## Available Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Command | Description |
+|---|---|
+| `npm run dev` | Sync database + start dev server |
+| `npm run build` | Sync database + production build |
+| `npm start` | Start production server |
+| `npm run setup` | Full first-time setup (install, generate, push, seed) |
+| `npm run db:push` | Sync Prisma schema to database |
+| `npm run db:seed` | Seed the admin user |
+| `npm run db:reset` | Delete database, recreate schema, and re-seed |
+| `npm run clean` | Remove build cache and database |
+| `npm run clean:full` | Full clean + reinstall + setup (for new releases) |
+| `npm run lint` | Run ESLint |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Clean Up for Production / New Release
 
-## Deploy on Vercel
+To do a full clean reset (removes build artifacts, caches, database, and reinstalls everything):
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run clean:full
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For a lighter cleanup that only removes build cache and database:
+
+```bash
+npm run clean
+npm run setup
+```
+
+## Project Structure
+
+```
+app/
+  admin/              # Admin dashboard and form builder
+  api/                # API routes (forms, responses, auth)
+  form/[id]/          # Public form submission page
+  edit/[id]/          # Respondent edit page
+  login/              # Admin login page
+lib/                  # Utilities (auth, prisma, rate-limit, sanitize)
+prisma/
+  schema.prisma       # Database schema
+  seed.ts             # Admin user seeder
+```
