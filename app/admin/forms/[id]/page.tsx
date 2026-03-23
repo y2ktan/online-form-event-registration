@@ -662,7 +662,7 @@ export default function FormBuilderPage() {
 
         {/* Floating toolbar */}
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2 w-[calc(100vw-1.5rem)] max-w-md sm:bottom-6 sm:w-auto">
-          <div className="flex items-center justify-center gap-1 sm:gap-2 rounded-full border bg-white px-2 sm:px-3 py-2 shadow-lg overflow-x-auto no-scrollbar">
+          <div className="flex items-center justify-center gap-1 sm:gap-2 rounded-full border bg-white px-2 sm:px-3 py-2 shadow-lg overflow-visible">
             {/* Add Question */}
             <div className="relative shrink-0">
               <button
