@@ -27,6 +27,7 @@ import {
   ClipboardCopy,
   Pencil,
   Users,
+  ExternalLink,
 } from "lucide-react";
 import {
   QUESTION_TYPES,
@@ -352,6 +353,23 @@ export default function FormBuilderPage() {
                 }`}
               >
                 {form.published ? "Published" : "Draft"}
+              </button>
+              <button
+                onClick={() => {
+                  if (form.published) {
+                    window.open(`/form/${form.id}`, "_blank");
+                  }
+                }}
+                disabled={!form.published}
+                className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm ${
+                  form.published
+                    ? "text-gray-600 hover:bg-gray-100 cursor-pointer"
+                    : "text-gray-300 cursor-not-allowed"
+                }`}
+                title={form.published ? "Open published form" : "Form must be published to open"}
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span className="hidden sm:inline">Open</span>
               </button>
               <button
                 onClick={() => setShowPreview(true)}
