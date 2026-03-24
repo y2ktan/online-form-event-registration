@@ -1,11 +1,11 @@
 {
-  "name": "my-ai-registration",
+  "name": "ai-form-registration",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npx prisma db push && next dev",
+    "dev": "npx prisma db push && next dev -p 2277",
     "build": "npx prisma db push && next build",
-    "start": "next start",
+    "start": "next start -p 2277",
     "lint": "eslint",
     "setup": "npm install && npx prisma generate && npx prisma db push && npx prisma db seed",
     "db:push": "npx prisma db push",

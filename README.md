@@ -1,6 +1,15 @@
-# Form Builder Admin
+# AI Form Registration
 
 An admin-controlled form builder built with Next.js, Prisma, SQLite, and Tailwind CSS.
+
+## 🚀 Quick Start (Docker)
+
+The fastest way to deploy is using Docker. See [DOCKER_DEPLOY.md](./DOCKER_DEPLOY.md) for full instructions.
+
+```bash
+docker build . -t ghcr.io/y2ktan/ai-form-registration:latest
+docker run -p 2277:2277 ghcr.io/y2ktan/ai-form-registration:latest
+```
 
 ## Tech Stack
 
@@ -16,7 +25,7 @@ An admin-controlled form builder built with Next.js, Prisma, SQLite, and Tailwin
 
 ```bash
 git clone <repo-url>
-cd my-ai-registration
+cd ai-form-registration
 npm install
 ```
 
@@ -52,7 +61,7 @@ npm run dev
 
 The database is automatically synced on every `npm run dev` and `npm run build`, so you never need to manually run migrations.
 
-Open [http://localhost:3000](http://localhost:3000) to view the app.
+Open [http://localhost:2277](http://localhost:2277) to view the app.
 
 ### 5. Log in
 
