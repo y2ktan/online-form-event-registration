@@ -679,6 +679,19 @@ function SortableQuestion({
             className="flex-1 min-w-[150px] rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
             placeholder="Custom error text"
           />
+          <button
+            onClick={() => {
+              const newConfig = { ...question.config };
+              newConfig.validationEnabled = false;
+              delete newConfig.validation;
+              updateQuestion(qIndex, { config: newConfig });
+            }}
+            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+            title="Remove validation"
+            aria-label="Remove validation"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         </div>
       )}
     </div>
