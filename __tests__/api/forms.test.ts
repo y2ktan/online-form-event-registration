@@ -25,18 +25,22 @@ import { GET as GET_ID, PUT as PUT_ID, DELETE as DELETE_ID } from "../../app/api
 // Mock process.env for Turnstile
 process.env.TURNSTILE_SECRET_KEY = "dummy";
 
+// Type casting helpers
+const mockForm = {
+  id: "form-1",
+  title: "Test Form",
+  description: "A test form",
+  published: false,
+  collectPhone: true,
+  phoneDescription: "Test Description",
+  authorId: "admin-1",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  questions: [],
+} as unknown;
+
 describe("Forms API CRUD", () => {
   const mockAdminSession = { userId: "admin-1", email: "admin@test.com", role: "ADMIN" };
-  const mockForm = {
-    id: "form-1",
-    title: "Test Form",
-    description: "A test form",
-    published: false,
-    authorId: "admin-1",
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    questions: [],
-  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -51,7 +55,8 @@ describe("Forms API CRUD", () => {
 
   test("GET /api/forms returns forms for admin", async () => {
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
-    prismaMock.form.findMany.mockResolvedValue([mockForm as any]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prismaMock.form.findMany.mockResolvedValue([mockForm] as any);
     
     const req = new NextRequest("http://localhost:3000/api/forms");
     const res = await GET(req);
@@ -62,6 +67,7 @@ describe("Forms API CRUD", () => {
 
   test("POST /api/forms creates a new form", async () => {
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prismaMock.form.create.mockResolvedValue(mockForm as any);
 
     const req = new NextRequest("http://localhost:3000/api/forms", {
@@ -75,6 +81,7 @@ describe("Forms API CRUD", () => {
   });
 
   test("GET /api/forms/[id] returns a form", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prismaMock.form.findUnique.mockResolvedValue(mockForm as any);
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
 
@@ -85,15 +92,19 @@ describe("Forms API CRUD", () => {
 
   test("PUT /api/forms/[id] updates a form", async () => {
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
-    prismaMock.form.update.mockResolvedValue({ ...mockForm, title: "Updated" } as any);
-    prismaMock.form.findUnique.mockResolvedValue({ ...mockForm, title: "Updated" } as any);
+    const updatedForm = { ...(mockForm as object), title: "Updated" };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prismaMock.form.update.mockResolvedValue(updatedForm as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prismaMock.form.findUnique.mockResolvedValue(updatedForm as any);
 
     prismaMock.question.deleteMany.mockResolvedValue({ count: 0 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prismaMock.question.create.mockResolvedValue({ id: "q1", formId: "form-1", type: "SHORT_TEXT", label: "Q1", isRequired: false, order: 0, config: "{}" } as any);
 
     const req = new NextRequest("http://localhost:3000/api/forms/form-1", {
       method: "PUT",
-      body: JSON.stringify({ title: "Updated", questions: [] }),
+      body: JSON.stringify({ title: "Updated", questions: [], collectPhone: false, phoneDescription: "Custom desc" }),
     });
     
     const res = await PUT_ID(req, { params: Promise.resolve({ id: "form-1" }) });
@@ -103,6 +114,7 @@ describe("Forms API CRUD", () => {
 
   test("DELETE /api/forms/[id] deletes a form", async () => {
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prismaMock.form.delete.mockResolvedValue(mockForm as any);
 
     const req = new NextRequest("http://localhost:3000/api/forms/form-1", {

@@ -17,17 +17,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { formId, phoneNumber, answers } = body;
 
-    if (!formId || !phoneNumber || !answers) {
+    if (!formId || !answers) {
       return NextResponse.json(
-        { error: "Form ID, phone number, and answers are required." },
-        { status: 400 }
-      );
-    }
-
-    const sanitizedPhone = sanitize(phoneNumber).trim();
-    if (!sanitizedPhone) {
-      return NextResponse.json(
-        { error: "Valid phone number is required." },
+        { error: "Form ID and answers are required." },
         { status: 400 }
       );
     }
@@ -40,15 +32,29 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (!form || !form.published) {
+    if (!form) {
+      return NextResponse.json({ error: "Form not found" }, { status: 404 });
+    }
+
+    if (form.collectPhone && (!phoneNumber || !sanitize(phoneNumber).trim())) {
       return NextResponse.json(
-        { error: "Form not found or not published." },
-        { status: 404 }
+        { error: "Phone number is required." },
+        { status: 400 }
       );
     }
 
-    // Validate required fields
+    // Identify phone number question IDs to exclude from answer processing
+    const phoneQuestionIds = new Set<string>();
     for (const question of form.questions) {
+      let config: Record<string, unknown> = {};
+      try {
+        config = typeof question.config === "string" ? JSON.parse(question.config) : (question.config ?? {});
+      } catch { /* ignore parse errors */ }
+      if (config.isPhoneNumber) {
+        phoneQuestionIds.add(question.id);
+        continue;
+      }
+
       if (question.isRequired) {
         const answer = answers[question.id];
         if (!answer || (typeof answer === "string" && !answer.trim())) {
@@ -60,15 +66,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Filter out phone number question from answers before saving
+    const filteredAnswers = Object.entries(answers as Record<string, unknown>).filter(
+      ([questionId]) => !phoneQuestionIds.has(questionId)
+    );
+
     // Create response with answers
     const response = await prisma.response.create({
       data: {
-        formId,
-        phoneNumber: sanitizedPhone,
+        form: { connect: { id: formId } },
+        phoneNumber: form.collectPhone ? sanitize(phoneNumber) : null,
         answers: {
-          create: Object.entries(answers as Record<string, unknown>).map(
+          create: filteredAnswers.map(
             ([questionId, value]) => ({
-              questionId,
+              question: { connect: { id: questionId } },
               value: typeof value === "string" ? sanitize(value) : JSON.stringify(value),
             })
           ),
@@ -84,8 +95,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Submit error:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Failed to submit form." },
+      { error: "Failed to submit form.", details: message },
       { status: 500 }
     );
   }

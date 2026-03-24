@@ -24,6 +24,8 @@ model Form {
   title       String
   description String     @default("")
   published   Boolean    @default(false)
+  collectPhone Boolean   @default(true) // Whether to collect phone number for edits
+  phoneDescription String @default("We need to keep your phone number for future reference")
   authorId    String
   author      User       @relation(fields: [authorId], references: [id])
   createdAt   DateTime   @default(now())
@@ -61,7 +63,7 @@ model Response {
   id          String   @id @default(uuid())
   formId      String
   form        Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  phoneNumber String
+  phoneNumber String?  // Optional, only collected if form.collectPhone is true
   editToken   String   @unique @default(uuid())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

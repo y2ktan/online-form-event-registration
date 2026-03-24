@@ -25,6 +25,8 @@ interface FormData {
   title: string;
   description: string;
   published: boolean;
+  collectPhone: boolean;
+  phoneDescription: string;
   questions: QuestionData[];
 }
 
@@ -41,6 +43,7 @@ export default function PublicFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [showPhoneDialog, setShowPhoneDialog] = useState(false);
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -99,14 +102,11 @@ export default function PublicFormPage() {
     setError("");
     setFieldErrors({});
 
-    // Client-side validation
+    // Client-side validation (skip phone number question — handled via modal dialog)
     const errors: Record<string, string> = {};
-    if (!phoneNumber.trim()) {
-      errors["phoneNumber"] = "Phone number is required.";
-    }
     for (const q of form.questions) {
       const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
-      if (config?.isPhoneNumber) continue; // Phone number handled separately
+      if (config?.isPhoneNumber) continue;
       if (q.isRequired) {
         const val = answers[q.id];
         if (!val || !val.trim() || val === "[]") {
@@ -120,38 +120,44 @@ export default function PublicFormPage() {
       return;
     }
 
-    // Build answers including phone number mapped to its question
-    const phoneQuestion = form.questions.find((q) => {
-      const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
-      return config?.isPhoneNumber;
-    });
-
-    const allAnswers = { ...answers };
-    if (phoneQuestion) {
-      allAnswers[phoneQuestion.id] = phoneNumber;
+    // If phone is required but not yet provided, show the dialog
+    if (form.collectPhone && !phoneNumber.trim()) {
+      setShowPhoneDialog(true);
+      return;
     }
 
+    // Otherwise submit directly
+    await submitForm();
+  }
+
+  async function submitForm() {
+    if (!form) return;
     setSubmitting(true);
+    setError("");
+
     try {
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           formId: form.id,
-          phoneNumber,
-          answers: allAnswers,
+          phoneNumber: form.collectPhone ? phoneNumber : undefined,
+          answers: answers,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Submission failed.");
+        setShowPhoneDialog(false);
         return;
       }
 
+      setShowPhoneDialog(false);
       setSubmitted(true);
     } catch {
       setError("An unexpected error occurred.");
+      setShowPhoneDialog(false);
     } finally {
       setSubmitting(false);
     }
@@ -219,36 +225,6 @@ export default function PublicFormPage() {
               {error}
             </div>
           )}
-
-          {/* Phone Number field (always first, always required) */}
-          <div className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
-            <label className="block text-base font-medium text-gray-900">
-              Phone Number <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="tel"
-              value={phoneNumber}
-              onChange={(e) => {
-                setPhoneNumber(e.target.value);
-                setFieldErrors((prev) => {
-                  const next = { ...prev };
-                  delete next["phoneNumber"];
-                  return next;
-                });
-              }}
-              className={`mt-2 block w-full rounded-lg border px-3 py-2 text-gray-900 shadow-sm focus:outline-none focus:ring-1 ${
-                fieldErrors["phoneNumber"]
-                  ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                  : "border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-              }`}
-              placeholder="Enter your phone number"
-            />
-            {fieldErrors["phoneNumber"] && (
-              <p className="mt-1 text-sm text-red-600">
-                {fieldErrors["phoneNumber"]}
-              </p>
-            )}
-          </div>
 
           {/* Dynamic questions */}
           {nonPhoneQuestions.map((question) => (
@@ -472,6 +448,72 @@ export default function PublicFormPage() {
           </div>
         </form>
       </div>
+
+      {/* Phone Number Modal Dialog */}
+      {showPhoneDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Phone Number Required</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                {form.phoneDescription || "We need to keep your phone number for future reference."}
+              </p>
+              
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => {
+                    setPhoneNumber(e.target.value);
+                    if (fieldErrors["phoneNumber"]) {
+                      setFieldErrors(prev => {
+                        const next = {...prev};
+                        delete next["phoneNumber"];
+                        return next;
+                      });
+                    }
+                  }}
+                  className={`block w-full rounded-lg border px-3 py-2 text-gray-900 shadow-sm focus:outline-none focus:ring-2 ${
+                    fieldErrors["phoneNumber"]
+                      ? "border-red-300 focus:border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                  }`}
+                  placeholder="Enter your phone number"
+                  autoFocus
+                />
+                {fieldErrors["phoneNumber"] && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors["phoneNumber"]}</p>
+                )}
+              </div>
+            </div>
+            <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 rounded-b-xl border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowPhoneDialog(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!phoneNumber.trim()) {
+                    setFieldErrors(prev => ({...prev, phoneNumber: "Phone number is required"}));
+                    return;
+                  }
+                  submitForm();
+                }}
+                disabled={submitting}
+                className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
+              >
+                {submitting ? "Submitting..." : "Submit Form"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

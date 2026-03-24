@@ -76,6 +76,8 @@ interface FormData {
   title: string;
   description: string;
   published: boolean;
+  collectPhone: boolean;
+  phoneDescription: string;
   questions: QuestionData[];
 }
 
@@ -96,7 +98,7 @@ function tempId() {
 function SortableQuestion({
   question,
   qIndex,
-  isLocked,
+  visualIndex,
   updateQuestion,
   removeQuestion,
   addOption,
@@ -105,7 +107,7 @@ function SortableQuestion({
 }: {
   question: QuestionData;
   qIndex: number;
-  isLocked: boolean;
+  visualIndex: number;
   updateQuestion: (index: number, updates: Partial<QuestionData>) => void;
   removeQuestion: (index: number) => void;
   addOption: (qIndex: number) => void;
@@ -135,8 +137,8 @@ function SortableQuestion({
       ref={setNodeRef}
       style={style}
       className={`rounded-lg border bg-white p-3 shadow-sm sm:rounded-xl sm:p-5 ${
-        isLocked ? "border-l-4 border-l-amber-400" : ""
-      } ${isDragging ? "shadow-lg ring-2 ring-indigo-500 ring-opacity-50" : ""}`}
+        isDragging ? "shadow-lg ring-2 ring-indigo-500 ring-opacity-50" : ""
+      }`}
     >
       <div className="mb-4 flex flex-col sm:flex-row sm:items-start gap-3">
         <div className="flex items-center sm:items-start gap-2 w-full sm:w-auto">
@@ -152,13 +154,8 @@ function SortableQuestion({
           <div className="flex-1 sm:hidden">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-gray-500">
-                Q{qIndex + 1}
+                Q{visualIndex + 1}
               </span>
-              {isLocked && (
-                <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                  Locked
-                </span>
-              )}
             </div>
           </div>
         </div>
@@ -171,63 +168,53 @@ function SortableQuestion({
               onChange={(e) =>
                 updateQuestion(qIndex, { label: e.target.value })
               }
-              disabled={isLocked}
-              className="flex-1 border-b border-transparent text-base font-medium text-gray-900 focus:border-indigo-500 focus:outline-none disabled:bg-transparent"
+              className="flex-1 border-b border-transparent text-base font-medium text-gray-900 focus:border-indigo-500 focus:outline-none"
               placeholder="Question"
             />
-            {isLocked && (
-              <span className="hidden sm:inline-flex shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                Locked
-              </span>
-            )}
           </div>
 
           {/* Type selector */}
-          {!isLocked && (
-            <div className="mt-3 flex items-center gap-3 w-full sm:w-auto">
-              <select
-                value={question.type}
-                onChange={(e) =>
-                  updateQuestion(qIndex, {
-                    type: e.target.value as QuestionType,
-                    options: requiresOptions(
-                      e.target.value as QuestionType
-                    )
-                      ? question.options.length > 0
-                        ? question.options
-                        : [
-                            {
-                              id: tempId(),
-                              value: "Option 1",
-                              order: 0,
-                              group: "default",
-                            },
-                          ]
-                      : [],
-                  })
-                }
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-              >
-                {Object.entries(QUESTION_TYPE_CATEGORIES).map(
-                  ([category, types]) => (
-                    <optgroup key={category} label={category}>
-                      {types.map((t) => (
-                        <option key={t} value={t}>
-                          {QUESTION_TYPE_LABELS[t]}
-                        </option>
-                      ))}
-                    </optgroup>
+          <div className="mt-3 flex items-center gap-3 w-full sm:w-auto">
+            <select
+              value={question.type}
+              onChange={(e) =>
+                updateQuestion(qIndex, {
+                  type: e.target.value as QuestionType,
+                  options: requiresOptions(
+                    e.target.value as QuestionType
                   )
-                )}
-              </select>
-            </div>
-          )}
+                    ? question.options.length > 0
+                      ? question.options
+                      : [
+                          {
+                            id: tempId(),
+                            value: "Option 1",
+                            order: 0,
+                            group: "default",
+                          },
+                        ]
+                    : [],
+                })
+              }
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
+            >
+              {Object.entries(QUESTION_TYPE_CATEGORIES).map(
+                ([category, types]) => (
+                  <optgroup key={category} label={category}>
+                    {types.map((t) => (
+                      <option key={t} value={t}>
+                        {QUESTION_TYPE_LABELS[t]}
+                      </option>
+                    ))}
+                  </optgroup>
+                )
+              )}
+            </select>
+          </div>
 
           {/* Question preview / input area */}
           <div className="mt-3">
-            {(question.type === "SHORT_TEXT" ||
-              (isLocked &&
-                Boolean(question.config?.isPhoneNumber))) && (
+            {question.type === "SHORT_TEXT" && (
               <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
                 Short answer text
               </div>
@@ -328,39 +315,37 @@ function SortableQuestion({
         </div>
 
         {/* Question actions */}
-        {!isLocked && (
-          <div className="flex w-full sm:w-auto items-center justify-end gap-2 sm:border-l sm:pl-3 pt-3 sm:pt-0 border-t sm:border-t-0 mt-3 sm:mt-0">
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-              <span>Required</span>
-              <button
-                onClick={() =>
-                  updateQuestion(qIndex, {
-                    isRequired: !question.isRequired,
-                  })
-                }
-                className={`relative h-5 w-9 rounded-full transition-colors ${
-                  question.isRequired
-                    ? "bg-indigo-600"
-                    : "bg-gray-300"
-                }`}
-              >
-                <span
-                  className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                    question.isRequired
-                      ? "translate-x-4"
-                      : "translate-x-0"
-                  }`}
-                />
-              </button>
-            </label>
+        <div className="flex w-full sm:w-auto items-center justify-end gap-2 sm:border-l sm:pl-3 pt-3 sm:pt-0 border-t sm:border-t-0 mt-3 sm:mt-0">
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+            <span>Required</span>
             <button
-              onClick={() => removeQuestion(qIndex)}
-              className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
+              onClick={() =>
+                updateQuestion(qIndex, {
+                  isRequired: !question.isRequired,
+                })
+              }
+              className={`relative h-5 w-9 rounded-full transition-colors ${
+                question.isRequired
+                  ? "bg-indigo-600"
+                  : "bg-gray-300"
+              }`}
             >
-              <Trash2 className="h-4 w-4" />
+              <span
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                  question.isRequired
+                    ? "translate-x-4"
+                    : "translate-x-0"
+                }`}
+              />
             </button>
-          </div>
-        )}
+          </label>
+          <button
+            onClick={() => removeQuestion(qIndex)}
+            className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -764,18 +749,65 @@ export default function FormBuilderPage() {
           onDragEnd={handleDragEnd}
         >
           <div className="space-y-4">
+            {/* Identity Settings Block for Phone Number */}
+            <div className="rounded-lg border-t-4 border-t-indigo-600 bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-gray-900">Identity Field (Phone Number)</h3>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                  <span>Require Phone Number</span>
+                  <button
+                    onClick={() => setForm({ ...form, collectPhone: !form.collectPhone })}
+                    className={`relative h-5 w-9 rounded-full transition-colors ${
+                      form.collectPhone ? "bg-indigo-600" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                        form.collectPhone ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </label>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm text-gray-600 mb-4">
+                  {form.collectPhone 
+                    ? "This form will require respondents to enter their phone number. This is necessary if you want them to be able to edit their submission later."
+                    : "This form is currently anonymous. Respondents will NOT be asked for their phone number and cannot edit their submissions later."
+                  }
+                </p>
+                {form.collectPhone && (
+                  <div className="flex flex-col gap-2 mt-4">
+                    <label className="text-sm font-medium text-gray-700">Dialog Description</label>
+                    <input
+                      type="text"
+                      value={form.phoneDescription || ""}
+                      onChange={(e) => setForm({ ...form, phoneDescription: e.target.value })}
+                      className="w-full sm:w-3/4 border-b border-gray-300 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none bg-gray-50 p-2 rounded-t"
+                      placeholder="e.g. We need to keep your phone number for future reference"
+                    />
+                    <p className="text-xs text-gray-500">This message will be shown in a popup dialog when the user clicks Submit.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <SortableContext
-              items={form.questions.map((q) => q.id)}
+              items={form.questions.filter(q => !q.config?.isPhoneNumber).map((q) => q.id)}
               strategy={verticalListSortingStrategy}
             >
-              {form.questions.map((question, qIndex) => {
-                const isLocked = Boolean(question.config?.locked);
+              {form.questions.filter(q => !q.config?.isPhoneNumber).map((question, qIndex) => {
+                // We need to pass the real index from the full array to the handlers
+                const realIndex = form.questions.findIndex(q => q.id === question.id);
+                // Also pass a visual index for the UI (Q1, Q2, etc) ignoring the phone number
                 return (
                   <SortableQuestion
                     key={question.id}
                     question={question}
-                    qIndex={qIndex}
-                    isLocked={isLocked}
+                    qIndex={realIndex}
+                    visualIndex={qIndex}
                     updateQuestion={updateQuestion}
                     removeQuestion={removeQuestion}
                     addOption={addOption}

@@ -65,16 +65,17 @@ export async function PUT(
     if (body.title !== undefined) updateData.title = sanitize(body.title);
     if (body.description !== undefined) updateData.description = sanitize(body.description);
     if (body.published !== undefined) updateData.published = Boolean(body.published);
+    if (body.collectPhone !== undefined) updateData.collectPhone = Boolean(body.collectPhone);
+    if (body.phoneDescription !== undefined) updateData.phoneDescription = sanitize(body.phoneDescription);
 
-    const form = await prisma.form.update({
+    await prisma.form.update({
       where: { id },
       data: updateData,
     });
 
     // Update questions if provided
     if (body.questions && Array.isArray(body.questions)) {
-      // Delete old questions (except the locked phone number field)
-      // Then re-create all questions
+      // Delete old questions (we no longer skip the phone number since it's a form-level setting)
       await prisma.question.deleteMany({
         where: { formId: id },
       });

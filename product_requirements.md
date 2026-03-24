@@ -20,7 +20,8 @@ Build a full-stack Form Builder application that allows Admins to create, manage
   - **Date/Time:** Specific picker components.
 - **Form Management:** Toggle "Published" status, view response counts, and delete forms (with cascade delete for questions).
 - **Field Configuration:** Admin can toggle whether each question is "Required" or "Optional".
-- **Default Fields:** A "Phone Number" field is automatically included and permanently required for every form created.
+- ~~**Default Fields:** A "Phone Number" field is automatically included and permanently required for every form created.~~
+- **Form Identity Settings Block (New UX):** Instead of treating the Phone Number as a locked, draggable question, it is placed as a fixed "Identity Settings" block at the top of the form builder (just below Title/Description). It is permanently required but the Admin can customize the label (e.g., "WhatsApp Number") and helper text. On the public form, it is visually separated from the main questions.
 - **Data Management:** Admin can search submitted responses using the respondent's phone number.
 - **Response Editing:** Admin can modify submitted data and generate an editable link to send to respondents, allowing them to update their own submissions.
 - **Auto-Save:** The form builder must auto-save changes after a short debounce (~1.5s of inactivity). No manual Save button. A subtle status indicator ("Saving…" / "Saved") should appear in the header.

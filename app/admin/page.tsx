@@ -48,8 +48,10 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
+    // Ensure we run the fetch initially
     fetchForms().finally(() => setLoading(false));
-  }, [fetchForms]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleCreateForm() {
     const res = await fetch("/api/forms", {
