@@ -12,9 +12,13 @@
     "db:seed": "npx prisma db seed",
     "db:reset": "rm -f prisma/dev.db && npx prisma db push && npx prisma db seed",
     "clean": "rm -rf .next node_modules/.cache prisma/dev.db",
-    "clean:full": "rm -rf .next node_modules/.cache node_modules prisma/dev.db && npm install && npx prisma generate && npx prisma db push && npx prisma db seed"
+    "clean:full": "rm -rf .next node_modules/.cache node_modules prisma/dev.db && npm install && npx prisma generate && npx prisma db push && npx prisma db seed",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@marsidev/react-turnstile": "^1.4.2",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
@@ -31,17 +35,26 @@
     "seed": "npx tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@rolldown/binding-darwin-arm64": "^1.0.0-rc.11",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.1",
     "@types/uuid": "^11.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/ui": "^3.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "jsdom": "^22.1.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.0.0",
+    "vitest-mock-extended": "^3.0.1"
   }
 }

@@ -30,6 +30,23 @@ import {
   ExternalLink,
 } from "lucide-react";
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+import {
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
   QUESTION_TYPE_CATEGORIES,
@@ -76,6 +93,282 @@ function tempId() {
   return `temp-${++tempIdCounter}`;
 }
 
+function SortableQuestion({
+  question,
+  qIndex,
+  isLocked,
+  updateQuestion,
+  removeQuestion,
+  addOption,
+  updateOption,
+  removeOption,
+}: {
+  question: QuestionData;
+  qIndex: number;
+  isLocked: boolean;
+  updateQuestion: (index: number, updates: Partial<QuestionData>) => void;
+  removeQuestion: (index: number) => void;
+  addOption: (qIndex: number) => void;
+  updateOption: (qIndex: number, oIndex: number, value: string) => void;
+  removeOption: (qIndex: number, oIndex: number) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: question.id,
+    disabled: isLocked, // Prevent dragging locked items
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    position: "relative" as const,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`rounded-lg border bg-white p-3 shadow-sm sm:rounded-xl sm:p-5 ${
+        isLocked ? "border-l-4 border-l-amber-400" : ""
+      } ${isDragging ? "shadow-lg ring-2 ring-indigo-500 ring-opacity-50" : ""}`}
+    >
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-start gap-3">
+        <div className="flex items-center sm:items-start gap-2 w-full sm:w-auto">
+          {!isLocked && (
+            <div className="mt-0 sm:mt-2 flex flex-col gap-1">
+              <button
+                {...attributes}
+                {...listeners}
+                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 touch-none cursor-grab active:cursor-grabbing"
+              >
+                <GripVertical className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          <div className="flex-1 sm:hidden">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-500">
+                Q{qIndex + 1}
+              </span>
+              {isLocked && (
+                <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Locked
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 w-full">
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={question.label}
+              onChange={(e) =>
+                updateQuestion(qIndex, { label: e.target.value })
+              }
+              disabled={isLocked}
+              className="flex-1 border-b border-transparent text-base font-medium text-gray-900 focus:border-indigo-500 focus:outline-none disabled:bg-transparent"
+              placeholder="Question"
+            />
+            {isLocked && (
+              <span className="hidden sm:inline-flex shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                Locked
+              </span>
+            )}
+          </div>
+
+          {/* Type selector */}
+          {!isLocked && (
+            <div className="mt-3 flex items-center gap-3 w-full sm:w-auto">
+              <select
+                value={question.type}
+                onChange={(e) =>
+                  updateQuestion(qIndex, {
+                    type: e.target.value as QuestionType,
+                    options: requiresOptions(
+                      e.target.value as QuestionType
+                    )
+                      ? question.options.length > 0
+                        ? question.options
+                        : [
+                            {
+                              id: tempId(),
+                              value: "Option 1",
+                              order: 0,
+                              group: "default",
+                            },
+                          ]
+                      : [],
+                  })
+                }
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
+              >
+                {Object.entries(QUESTION_TYPE_CATEGORIES).map(
+                  ([category, types]) => (
+                    <optgroup key={category} label={category}>
+                      {types.map((t) => (
+                        <option key={t} value={t}>
+                          {QUESTION_TYPE_LABELS[t]}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )
+                )}
+              </select>
+            </div>
+          )}
+
+          {/* Question preview / input area */}
+          <div className="mt-3">
+            {(question.type === "SHORT_TEXT" ||
+              (isLocked &&
+                Boolean(question.config?.isPhoneNumber))) && (
+              <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
+                Short answer text
+              </div>
+            )}
+
+            {question.type === "PARAGRAPH" && (
+              <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-400">
+                Long answer text
+              </div>
+            )}
+
+            {requiresOptions(question.type) && (
+              <div className="space-y-2">
+                {question.options.map((opt, oIndex) => (
+                  <div
+                    key={opt.id}
+                    className="flex items-center gap-2"
+                  >
+                    {question.type === "MULTIPLE_CHOICE" && (
+                      <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                    )}
+                    {question.type === "CHECKBOX" && (
+                      <div className="h-4 w-4 rounded border-2 border-gray-300" />
+                    )}
+                    {question.type === "DROPDOWN" && (
+                      <span className="text-sm text-gray-400">
+                        {oIndex + 1}.
+                      </span>
+                    )}
+                    <input
+                      type="text"
+                      value={opt.value}
+                      onChange={(e) =>
+                        updateOption(qIndex, oIndex, e.target.value)
+                      }
+                      className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => removeOption(qIndex, oIndex)}
+                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => addOption(qIndex)}
+                  className="text-sm text-indigo-600 hover:text-indigo-500"
+                >
+                  + Add option
+                </button>
+              </div>
+            )}
+
+            {question.type === "LINEAR_SCALE" && (
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                1 ─── 2 ─── 3 ─── 4 ─── 5
+              </div>
+            )}
+
+            {question.type === "RATING" && (
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Star
+                    key={n}
+                    className="h-5 w-5 text-gray-300"
+                  />
+                ))}
+              </div>
+            )}
+
+            {question.type === "DATE" && (
+              <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
+                Month / Day / Year
+              </div>
+            )}
+
+            {question.type === "TIME" && (
+              <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
+                Hour : Minute
+              </div>
+            )}
+
+            {question.type === "FILE_UPLOAD" && (
+              <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-center text-sm text-gray-400">
+                <Upload className="mx-auto mb-1 h-5 w-5" />
+                File upload
+              </div>
+            )}
+
+            {(question.type === "MULTIPLE_CHOICE_GRID" ||
+              question.type === "CHECKBOX_GRID") && (
+              <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-400">
+                Grid (rows × columns)
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Question actions */}
+        {!isLocked && (
+          <div className="flex w-full sm:w-auto items-center justify-end gap-2 sm:border-l sm:pl-3 pt-3 sm:pt-0 border-t sm:border-t-0 mt-3 sm:mt-0">
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <span>Required</span>
+              <button
+                onClick={() =>
+                  updateQuestion(qIndex, {
+                    isRequired: !question.isRequired,
+                  })
+                }
+                className={`relative h-5 w-9 rounded-full transition-colors ${
+                  question.isRequired
+                    ? "bg-indigo-600"
+                    : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    question.isRequired
+                      ? "translate-x-4"
+                      : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </label>
+            <button
+              onClick={() => removeQuestion(qIndex)}
+              className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function FormBuilderPage() {
   const router = useRouter();
   const params = useParams();
@@ -92,6 +385,46 @@ export default function FormBuilderPage() {
 
   const loadedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      setForm((prev) => {
+        if (!prev) return prev;
+        
+        const oldIndex = prev.questions.findIndex((q) => q.id === active.id);
+        const newIndex = prev.questions.findIndex((q) => q.id === over.id);
+
+        // Keep locked items in place (sanity check, they shouldn't be draggable anyway)
+        if (Boolean(prev.questions[oldIndex]?.config?.locked) || Boolean(prev.questions[newIndex]?.config?.locked)) {
+          return prev;
+        }
+
+        const newQuestions = [...prev.questions];
+        const [movedQuestion] = newQuestions.splice(oldIndex, 1);
+        newQuestions.splice(newIndex, 0, movedQuestion);
+
+        // Update order property
+        newQuestions.forEach((q, index) => {
+          q.order = index;
+        });
+
+        return { ...prev, questions: newQuestions };
+      });
+    }
+  };
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -433,250 +766,35 @@ export default function FormBuilderPage() {
         </div>
 
         {/* Questions */}
-        <div className="space-y-4">
-          {form.questions.map((question, qIndex) => {
-            const isLocked = Boolean(question.config?.locked);
-            return (
-              <div
-                key={question.id}
-                className={`rounded-lg border bg-white p-3 shadow-sm sm:rounded-xl sm:p-5 ${
-                  isLocked ? "border-l-4 border-l-amber-400" : ""
-                }`}
-              >
-                <div className="mb-4 flex flex-col sm:flex-row sm:items-start gap-3">
-                  <div className="flex items-center sm:items-start gap-2 w-full sm:w-auto">
-                    {!isLocked && (
-                      <div className="mt-0 sm:mt-2 flex flex-col gap-1">
-                        <button
-                          onClick={() => moveQuestion(qIndex, "up")}
-                          className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                          disabled={qIndex === 0}
-                        >
-                          <GripVertical className="h-4 w-4" />
-                        </button>
-                      </div>
-                    )}
-                    <div className="flex-1 sm:hidden">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-500">Q{qIndex + 1}</span>
-                        {isLocked && (
-                          <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                            Locked
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex-1 w-full">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="text"
-                        value={question.label}
-                        onChange={(e) =>
-                          updateQuestion(qIndex, { label: e.target.value })
-                        }
-                        disabled={isLocked}
-                        className="flex-1 border-b border-transparent text-base font-medium text-gray-900 focus:border-indigo-500 focus:outline-none disabled:bg-transparent"
-                        placeholder="Question"
-                      />
-                      {isLocked && (
-                        <span className="hidden sm:inline-flex shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                          Locked
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Type selector */}
-                    {!isLocked && (
-                      <div className="mt-3 flex items-center gap-3 w-full sm:w-auto">
-                        <select
-                          value={question.type}
-                          onChange={(e) =>
-                            updateQuestion(qIndex, {
-                              type: e.target.value as QuestionType,
-                              options: requiresOptions(
-                                e.target.value as QuestionType
-                              )
-                                ? question.options.length > 0
-                                  ? question.options
-                                  : [
-                                      {
-                                        id: tempId(),
-                                        value: "Option 1",
-                                        order: 0,
-                                        group: "default",
-                                      },
-                                    ]
-                                : [],
-                            })
-                          }
-                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
-                        >
-                          {Object.entries(QUESTION_TYPE_CATEGORIES).map(
-                            ([category, types]) => (
-                              <optgroup key={category} label={category}>
-                                {types.map((t) => (
-                                  <option key={t} value={t}>
-                                    {QUESTION_TYPE_LABELS[t]}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )
-                          )}
-                        </select>
-                      </div>
-                    )}
-
-                    {/* Question preview / input area */}
-                    <div className="mt-3">
-                      {(question.type === "SHORT_TEXT" ||
-                        (isLocked &&
-                          Boolean(question.config?.isPhoneNumber))) && (
-                        <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
-                          Short answer text
-                        </div>
-                      )}
-
-                      {question.type === "PARAGRAPH" && (
-                        <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-400">
-                          Long answer text
-                        </div>
-                      )}
-
-                      {requiresOptions(question.type) && (
-                        <div className="space-y-2">
-                          {question.options.map((opt, oIndex) => (
-                            <div
-                              key={opt.id}
-                              className="flex items-center gap-2"
-                            >
-                              {question.type === "MULTIPLE_CHOICE" && (
-                                <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
-                              )}
-                              {question.type === "CHECKBOX" && (
-                                <div className="h-4 w-4 rounded border-2 border-gray-300" />
-                              )}
-                              {question.type === "DROPDOWN" && (
-                                <span className="text-sm text-gray-400">
-                                  {oIndex + 1}.
-                                </span>
-                              )}
-                              <input
-                                type="text"
-                                value={opt.value}
-                                onChange={(e) =>
-                                  updateOption(
-                                    qIndex,
-                                    oIndex,
-                                    e.target.value
-                                  )
-                                }
-                                className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-                              />
-                              <button
-                                onClick={() =>
-                                  removeOption(qIndex, oIndex)
-                                }
-                                className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            onClick={() => addOption(qIndex)}
-                            className="text-sm text-indigo-600 hover:text-indigo-500"
-                          >
-                            + Add option
-                          </button>
-                        </div>
-                      )}
-
-                      {question.type === "LINEAR_SCALE" && (
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                          1 ─── 2 ─── 3 ─── 4 ─── 5
-                        </div>
-                      )}
-
-                      {question.type === "RATING" && (
-                        <div className="flex gap-1">
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <Star
-                              key={n}
-                              className="h-5 w-5 text-gray-300"
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      {question.type === "DATE" && (
-                        <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
-                          Month / Day / Year
-                        </div>
-                      )}
-
-                      {question.type === "TIME" && (
-                        <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
-                          Hour : Minute
-                        </div>
-                      )}
-
-                      {question.type === "FILE_UPLOAD" && (
-                        <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-center text-sm text-gray-400">
-                          <Upload className="mx-auto mb-1 h-5 w-5" />
-                          File upload
-                        </div>
-                      )}
-
-                      {(question.type === "MULTIPLE_CHOICE_GRID" ||
-                        question.type === "CHECKBOX_GRID") && (
-                        <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-400">
-                          Grid (rows × columns)
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Question actions */}
-                  {!isLocked && (
-                    <div className="flex w-full sm:w-auto items-center justify-end gap-2 sm:border-l sm:pl-3 pt-3 sm:pt-0 border-t sm:border-t-0 mt-3 sm:mt-0">
-                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                        <span>Required</span>
-                        <button
-                          onClick={() =>
-                            updateQuestion(qIndex, {
-                              isRequired: !question.isRequired,
-                            })
-                          }
-                          className={`relative h-5 w-9 rounded-full transition-colors ${
-                            question.isRequired
-                              ? "bg-indigo-600"
-                              : "bg-gray-300"
-                          }`}
-                        >
-                          <span
-                            className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                              question.isRequired
-                                ? "translate-x-4"
-                                : "translate-x-0"
-                            }`}
-                          />
-                        </button>
-                      </label>
-                      <button
-                        onClick={() => removeQuestion(qIndex)}
-                        className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="space-y-4">
+            <SortableContext
+              items={form.questions.map((q) => q.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {form.questions.map((question, qIndex) => {
+                const isLocked = Boolean(question.config?.locked);
+                return (
+                  <SortableQuestion
+                    key={question.id}
+                    question={question}
+                    qIndex={qIndex}
+                    isLocked={isLocked}
+                    updateQuestion={updateQuestion}
+                    removeQuestion={removeQuestion}
+                    addOption={addOption}
+                    updateOption={updateOption}
+                    removeOption={removeOption}
+                  />
+                );
+              })}
+            </SortableContext>
+          </div>
+        </DndContext>
 
         {/* Floating toolbar */}
         <div className="fixed bottom-3 left-1/2 z-20 -translate-x-1/2 w-[calc(100vw-1.5rem)] max-w-md sm:bottom-6 sm:w-auto">

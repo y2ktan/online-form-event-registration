@@ -7,7 +7,7 @@ Build a full-stack Form Builder application that allows Admins to create, manage
 - **Framework:** Next.js (App Router preferred)
 - **Database/ORM:** SQLite with Prisma
 - **Authentication:** Custom Admin Login with hashed passwords
-- **Styling:** Tailwind CSS
+- **Testing:** Vitest for unit testing of API logic.
 
 ## 2. Core Functional Requirements
 **Admin Dashboard & Form Builder**
@@ -26,6 +26,7 @@ Build a full-stack Form Builder application that allows Admins to create, manage
 - **Auto-Save:** The form builder must auto-save changes after a short debounce (~1.5s of inactivity). No manual Save button. A subtle status indicator ("Saving…" / "Saved") should appear in the header.
 - **Preview Mode:** A preview icon in the form editor toolbar allows the admin to temporarily view and try the form in a full-screen overlay without needing to publish it first.
 - **Responses Tab in Form Editor:** The form editor page includes a tab bar ("Questions" | "Responses"). The Responses tab lists all submissions for that form. Admin can edit or delete any submitted entry inline.
+- **Drag and Drop:** Admin can reorder questions inside the form builder by dragging and dropping them via a designated grip handle.
 - **Responsive UI:** All form builder layouts and public form pages must be fully responsive, supporting screen sizes from mobile devices up to large desktop monitors with low time complexity (high performance) layouts.
 
 **Respondent Interface**
@@ -66,5 +67,7 @@ The database must support the following relational structure:
 - [ ] A user can submit the form and the data is saved to the database.
 - [ ] Rate limiting is active on the submission endpoint.
 - [ ] Form auto-saves on change without a manual Save button.
+- [ ] Admin can reorder questions using drag-and-drop.
 - [ ] Admin can preview a form without publishing it.
 - [ ] Admin can view, edit, and delete responses from within the form editor page.
+- [ ] CRUD logic is unit tested using Vitest and passes successfully.
