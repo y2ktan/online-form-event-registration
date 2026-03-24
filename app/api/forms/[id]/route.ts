@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, canEditForm } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 
@@ -31,10 +31,16 @@ export async function GET(
     return NextResponse.json({ error: "Form not found." }, { status: 404 });
   }
 
-  // Public access only if published
+  // Public access only if published, or if user is admin/collaborator
   const session = await getSession();
-  if (!form.published && (!session || session.role !== "ADMIN")) {
-    return NextResponse.json({ error: "Form not found." }, { status: 404 });
+  if (!form.published) {
+    if (!session) {
+      return NextResponse.json({ error: "Form not found." }, { status: 404 });
+    }
+    const hasAccess = await canEditForm(session.userId, session.role, id);
+    if (!hasAccess) {
+      return NextResponse.json({ error: "Form not found." }, { status: 404 });
+    }
   }
 
   return NextResponse.json(form);
@@ -53,8 +59,14 @@ export async function PUT(
   }
 
   const session = await getSession();
-  if (!session || session.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Allow admin or collaborator to edit
+  const hasAccess = await canEditForm(session.userId, session.role, id);
+  if (!hasAccess) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
   try {

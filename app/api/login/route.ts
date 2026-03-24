@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyPassword, createToken } from "@/lib/auth";
+import { verifyPassword, createToken, logAudit } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 
@@ -60,9 +60,23 @@ export async function POST(request: NextRequest) {
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
+      await logAudit({
+        userId: user.id,
+        action: "LOGIN_FAILED",
+        ipAddress: ip,
+        userAgent: request.headers.get("user-agent") || "",
+      });
       return NextResponse.json(
         { error: "Invalid email or password." },
         { status: 401 }
+      );
+    }
+
+    // Block pending activation users from logging in
+    if (user.status === "PENDING_ACTIVATION") {
+      return NextResponse.json(
+        { error: "Your account has not been activated yet. Please check your email for the activation link." },
+        { status: 403 }
       );
     }
 
@@ -70,6 +84,13 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       email: user.email,
       role: user.role,
+    });
+
+    await logAudit({
+      userId: user.id,
+      action: "LOGIN_SUCCESS",
+      ipAddress: ip,
+      userAgent: request.headers.get("user-agent") || "",
     });
 
     const response = NextResponse.json({ success: true, role: user.role });

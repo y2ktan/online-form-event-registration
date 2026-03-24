@@ -12,7 +12,18 @@ import {
   LogOut,
   Users,
   ExternalLink,
+  User,
+  KeyRound,
+  Settings,
+  ChevronDown,
 } from "lucide-react";
+
+interface CurrentUser {
+  id: string;
+  email: string;
+  nickname: string;
+  role: string;
+}
 
 interface Form {
   id: string;
@@ -21,6 +32,7 @@ interface Form {
   published: boolean;
   createdAt: string;
   _count: { responses: number; questions: number };
+  author?: { email: string; nickname: string };
 }
 
 interface ResponseData {
@@ -34,11 +46,23 @@ interface ResponseData {
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [forms, setForms] = useState<Form[]>([]);
   const [responses, setResponses] = useState<ResponseData[]>([]);
   const [phoneSearch, setPhoneSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"forms" | "responses">("forms");
   const [loading, setLoading] = useState(true);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [pwdError, setPwdError] = useState("");
+  const [pwdSuccess, setPwdSuccess] = useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+
+  const isAdmin = currentUser?.role === "ADMIN";
 
   const fetchForms = useCallback(async () => {
     const res = await fetch("/api/forms");
@@ -47,11 +71,42 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  const fetchUser = useCallback(async () => {
+    const res = await fetch("/api/auth/me");
+    if (res.ok) {
+      setCurrentUser(await res.json());
+    }
+  }, []);
+
   useEffect(() => {
-    // Ensure we run the fetch initially
-    fetchForms().finally(() => setLoading(false));
+    Promise.all([fetchForms(), fetchUser()]).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwdError("");
+    setPwdSuccess(false);
+    setPwdLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pwdForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPwdError(data.error || "Failed to change password.");
+      } else {
+        setPwdSuccess(true);
+        setPwdForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      }
+    } catch {
+      setPwdError("An unexpected error occurred.");
+    } finally {
+      setPwdLoading(false);
+    }
+  }
 
   async function handleCreateForm() {
     const res = await fetch("/api/forms", {
@@ -124,14 +179,73 @@ export default function AdminDashboard() {
       {/* Header */}
       <header className="border-b bg-white shadow-sm">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-3 py-3 sm:px-4 sm:py-4">
-          <h1 className="text-xl font-bold text-gray-900">Form Builder Admin</h1>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </button>
+          <h1 className="text-xl font-bold text-gray-900">Form Builder</h1>
+          <div className="relative">
+            <button
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                <User className="h-4 w-4" />
+              </div>
+              <span className="hidden sm:inline max-w-[150px] truncate">
+                {currentUser?.nickname || currentUser?.email || ""}
+              </span>
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {showProfileMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowProfileMenu(false)} />
+                <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-xl bg-white py-2 shadow-xl ring-1 ring-black/5">
+                  <div className="border-b px-4 py-3">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {currentUser?.nickname || currentUser?.email}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{currentUser?.email}</p>
+                    <span className="mt-1 inline-block rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                      {currentUser?.role}
+                    </span>
+                  </div>
+                  <div className="py-1">
+                    <button
+                      onClick={() => { setShowChangePassword(true); setShowProfileMenu(false); }}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      Change Password
+                    </button>
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => { router.push("/admin/users"); setShowProfileMenu(false); }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <Users className="h-4 w-4" />
+                          Manage Users
+                        </button>
+                        <button
+                          onClick={() => { router.push("/admin/settings/smtp"); setShowProfileMenu(false); }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <Settings className="h-4 w-4" />
+                          SMTP Settings
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div className="border-t py-1">
+                    <button
+                      onClick={() => { handleLogout(); setShowProfileMenu(false); }}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -165,14 +279,18 @@ export default function AdminDashboard() {
         {activeTab === "forms" && (
           <>
             <div className="mb-4 flex items-center justify-between gap-2 sm:mb-6">
-              <h2 className="text-lg font-semibold text-gray-900">Your Forms</h2>
-              <button
-                onClick={handleCreateForm}
-                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-              >
-                <Plus className="h-4 w-4" />
-                New Form
-              </button>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {isAdmin ? "All Forms" : "Your Forms"}
+              </h2>
+              {isAdmin && (
+                <button
+                  onClick={handleCreateForm}
+                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Form
+                </button>
+              )}
             </div>
 
             {forms.length === 0 ? (
@@ -182,15 +300,17 @@ export default function AdminDashboard() {
                   No forms yet
                 </h3>
                 <p className="mt-2 text-sm text-gray-500">
-                  Create your first form to get started.
+                  {isAdmin ? "Create your first form to get started." : "You have not been invited to any forms yet."}
                 </p>
-                <button
-                  onClick={handleCreateForm}
-                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Form
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={handleCreateForm}
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create Form
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -224,35 +344,39 @@ export default function AdminDashboard() {
                       >
                         Edit
                       </button>
-                      <button
-                        onClick={() => handleTogglePublish(form.id, form.published)}
-                        className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-                        title={form.published ? "Unpublish" : "Publish"}
-                      >
-                        {form.published ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
-                      {form.published && (
-                        <button
-                          onClick={() =>
-                            window.open(`/form/${form.id}`, "_blank")
-                          }
-                          className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
-                          title="View public form"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </button>
+                      {isAdmin && (
+                        <>
+                          <button
+                            onClick={() => handleTogglePublish(form.id, form.published)}
+                            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                            title={form.published ? "Unpublish" : "Publish"}
+                          >
+                            {form.published ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                          {form.published && (
+                            <button
+                              onClick={() =>
+                                window.open(`/form/${form.id}`, "_blank")
+                              }
+                              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                              title="View public form"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteForm(form.id)}
+                            className="rounded-lg p-2 text-red-500 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
                       )}
-                      <button
-                        onClick={() => handleDeleteForm(form.id)}
-                        className="rounded-lg p-2 text-red-500 hover:bg-red-50"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -349,6 +473,91 @@ export default function AdminDashboard() {
           </>
         )}
       </div>
+
+      {/* Change Password Modal */}
+      {showChangePassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900">Change Password</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Must be at least 12 characters with uppercase, numbers, and symbols.
+            </p>
+            <form onSubmit={handleChangePassword} className="mt-5 space-y-4">
+              {pwdError && (
+                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{pwdError}</div>
+              )}
+              {pwdSuccess && (
+                <div className="rounded-lg bg-green-50 p-3 text-sm text-green-600">Password changed successfully.</div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Current Password</label>
+                <div className="relative mt-1">
+                  <input
+                    type={showCurrentPwd ? "text" : "password"}
+                    value={pwdForm.currentPassword}
+                    onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+                    required
+                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button type="button" onClick={() => setShowCurrentPwd(!showCurrentPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showCurrentPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">New Password</label>
+                <div className="relative mt-1">
+                  <input
+                    type={showNewPwd ? "text" : "password"}
+                    value={pwdForm.newPassword}
+                    onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+                    required
+                    minLength={12}
+                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button type="button" onClick={() => setShowNewPwd(!showNewPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showNewPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
+                <div className="relative mt-1">
+                  <input
+                    type={showConfirmPwd ? "text" : "password"}
+                    value={pwdForm.confirmPassword}
+                    onChange={(e) => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+                    onPaste={(e) => e.preventDefault()}
+                    required
+                    minLength={12}
+                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button type="button" onClick={() => setShowConfirmPwd(!showConfirmPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showConfirmPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">Paste is disabled on this field.</p>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowChangePassword(false); setPwdError(""); setPwdSuccess(false); setPwdForm({ currentPassword: "", newPassword: "", confirmPassword: "" }); }}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={pwdLoading}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {pwdLoading ? "Changing..." : "Change Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

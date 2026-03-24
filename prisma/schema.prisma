@@ -13,10 +13,15 @@ datasource db {
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
+  nickname     String   @default("")
+  phone        String   @default("")
   passwordHash String
   role         String   @default("USER") // USER | ADMIN
+  status       String   @default("ACTIVATED") // PENDING_ACTIVATION | ACTIVATED
   createdAt    DateTime @default(now())
   forms        Form[]
+  collaborations FormCollaborator[]
+  auditLogs    AuditLog[]
 }
 
 model Form {
@@ -33,7 +38,8 @@ model Form {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   questions   Question[]
-  responses   Response[]
+  responses      Response[]
+  collaborators  FormCollaborator[]
 }
 
 model Question {
@@ -82,4 +88,50 @@ model Answer {
   questionId String
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   value      String   @default("") // JSON string for complex answers (grids, checkboxes, etc.)
+}
+
+model FormCollaborator {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  role      String   @default("EDITOR") // EDITOR
+  createdAt DateTime @default(now())
+
+  @@unique([userId, formId])
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  type      String   // INVITATION | PASSWORD_RESET
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   // USER_INVITED, USER_DELETED, PASSWORD_CHANGED, COLLABORATOR_ADDED, COLLABORATOR_REMOVED, LOGIN, etc.
+  details   String   @default("") // JSON string with extra context
+  ipAddress String   @default("")
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model SmtpConfig {
+  id        String   @id @default(uuid())
+  host      String
+  port      Int      @default(587)
+  secure    Boolean  @default(false)
+  user      String
+  pass      String
+  fromEmail String
+  fromName  String   @default("Form Builder")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 }

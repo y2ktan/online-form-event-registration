@@ -14,6 +14,8 @@ async function main() {
       email: "admin@formbuilder.com",
       passwordHash,
       role: "ADMIN",
+      status: "ACTIVATED",
+      nickname: "Admin",
     },
   });
 

@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 
-// GET all forms for admin
+// GET all forms for the current user (owned or collaborated)
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";
   const { allowed } = checkRateLimit(`forms:${ip}`);
@@ -13,18 +13,36 @@ export async function GET(request: NextRequest) {
   }
 
   const session = await getSession();
-  if (!session || session.role !== "ADMIN") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const forms = await prisma.form.findMany({
-      where: { authorId: session.userId },
-      include: {
-        _count: { select: { responses: true, questions: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    let forms;
+    if (session.role === "ADMIN") {
+      // Admins see all forms
+      forms = await prisma.form.findMany({
+        include: {
+          _count: { select: { responses: true, questions: true } },
+          author: { select: { email: true, nickname: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    } else {
+      // Regular users see only forms they collaborate on
+      forms = await prisma.form.findMany({
+        where: {
+          collaborators: {
+            some: { userId: session.userId },
+          },
+        },
+        include: {
+          _count: { select: { responses: true, questions: true } },
+          author: { select: { email: true, nickname: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }
 
     return NextResponse.json(forms);
   } catch (err) {

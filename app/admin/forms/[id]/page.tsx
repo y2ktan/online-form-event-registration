@@ -711,11 +711,24 @@ export default function FormBuilderPage() {
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [activeTab, setActiveTab] = useState<"questions" | "responses">("questions");
+  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators">("questions");
   const [showPreview, setShowPreview] = useState(false);
   const [responses, setResponses] = useState<ResponseEntry[]>([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+  const [collaborators, setCollaborators] = useState<Array<{
+    id: string;
+    userId: string;
+    role: string;
+    createdAt: string;
+    user: { id: string; email: string; nickname: string; status: string };
+  }>>([]);
+  const [allUsers, setAllUsers] = useState<Array<{ id: string; email: string; nickname: string; role: string; status: string }>>([]);
+  const [collabLoading, setCollabLoading] = useState(false);
+  const [collabSearch, setCollabSearch] = useState("");
+
+  const isAdmin = currentUserRole === "ADMIN";
 
   const filteredResponses = useMemo(() => {
     if (!searchQuery.trim()) return responses;
@@ -732,6 +745,12 @@ export default function FormBuilderPage() {
       );
     });
   }, [responses, searchQuery]);
+
+  useEffect(() => {
+    fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(u => {
+      if (u) setCurrentUserRole(u.role);
+    });
+  }, []);
 
   const loadedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -952,6 +971,74 @@ export default function FormBuilderPage() {
     return `${window.location.origin}/edit/${responseId}?token=${editToken}`;
   }
 
+  async function fetchCollaborators() {
+    setCollabLoading(true);
+    try {
+      const res = await fetch(`/api/forms/${formId}/collaborators`);
+      if (res.ok) {
+        setCollaborators(await res.json());
+      }
+    } catch {
+      // ignore
+    } finally {
+      setCollabLoading(false);
+    }
+  }
+
+  async function fetchAllUsers() {
+    try {
+      const res = await fetch("/api/admin/users");
+      if (res.ok) {
+        const users = await res.json();
+        setAllUsers(users.map((u: { id: string; email: string; nickname: string; role: string; status: string }) => ({
+          id: u.id,
+          email: u.email,
+          nickname: u.nickname,
+          role: u.role,
+          status: u.status,
+        })));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function addCollaborator(userId: string) {
+    try {
+      const res = await fetch(`/api/forms/${formId}/collaborators`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (res.ok) {
+        setCollabSearch("");
+        fetchCollaborators();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to add collaborator.");
+      }
+    } catch {
+      alert("Failed to add collaborator.");
+    }
+  }
+
+  async function removeCollaborator(userId: string) {
+    if (!confirm("Remove this collaborator's access to this form?")) return;
+    try {
+      const res = await fetch(`/api/forms/${formId}/collaborators/${userId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchCollaborators();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to remove collaborator.");
+      }
+    } catch {
+      alert("Failed to remove collaborator.");
+    }
+  }
+
   function getTypeIcon(type: QuestionType) {
     switch (type) {
       case "SHORT_TEXT":
@@ -1093,6 +1180,22 @@ export default function FormBuilderPage() {
             <Users className="h-4 w-4" />
             Responses
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setActiveTab("collaborators");
+                fetchCollaborators();
+              }}
+              className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium ${
+                activeTab === "collaborators"
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              Collaborators
+            </button>
+          )}
         </div>
       </header>
 
@@ -1474,6 +1577,110 @@ export default function FormBuilderPage() {
                         )}
                       </div>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Collaborators tab */}
+        {activeTab === "collaborators" && isAdmin && (
+          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-xl font-bold text-gray-900">
+                Collaborators ({collaborators.length})
+              </h2>
+            </div>
+
+            {/* Add collaborator */}
+            <div className="mb-6 rounded-lg border bg-gray-50 p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Add Collaborator</h3>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={collabSearch}
+                    onChange={(e) => {
+                      setCollabSearch(e.target.value);
+                      if (allUsers.length === 0) fetchAllUsers();
+                    }}
+                    onFocus={() => { if (allUsers.length === 0) fetchAllUsers(); }}
+                    placeholder="Search users by email..."
+                    className="block w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm placeholder-gray-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+              {collabSearch && (
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-white">
+                  {allUsers
+                    .filter(u => u.role !== "ADMIN")
+                    .filter(u => !collaborators.some(c => c.userId === u.id))
+                    .filter(u => u.email.toLowerCase().includes(collabSearch.toLowerCase()) || u.nickname.toLowerCase().includes(collabSearch.toLowerCase()))
+                    .map(u => (
+                      <button
+                        key={u.id}
+                        onClick={() => addCollaborator(u.id)}
+                        className="flex w-full items-center justify-between px-4 py-2.5 text-sm hover:bg-indigo-50 transition-colors"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900">{u.nickname || u.email}</p>
+                          {u.nickname && <p className="text-xs text-gray-500">{u.email}</p>}
+                        </div>
+                        <span className="text-xs font-medium text-indigo-600">+ Add</span>
+                      </button>
+                    ))}
+                  {allUsers
+                    .filter(u => u.role !== "ADMIN")
+                    .filter(u => !collaborators.some(c => c.userId === u.id))
+                    .filter(u => u.email.toLowerCase().includes(collabSearch.toLowerCase()) || u.nickname.toLowerCase().includes(collabSearch.toLowerCase()))
+                    .length === 0 && (
+                    <div className="px-4 py-3 text-sm text-gray-500">No matching users found.</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Current collaborators */}
+            {collabLoading ? (
+              <div className="flex items-center justify-center py-12 text-gray-500">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Loading collaborators…
+              </div>
+            ) : collaborators.length === 0 ? (
+              <div className="rounded-xl border-2 border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">
+                No collaborators yet. Add users above to grant them edit access to this form.
+              </div>
+            ) : (
+              <div className="divide-y rounded-lg border">
+                {collaborators.map((collab) => (
+                  <div key={collab.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {collab.user.nickname || collab.user.email}
+                      </p>
+                      {collab.user.nickname && (
+                        <p className="text-xs text-gray-500">{collab.user.email}</p>
+                      )}
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          Editor
+                        </span>
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                          collab.user.status === "ACTIVATED" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                        }`}>
+                          {collab.user.status === "ACTIVATED" ? "Active" : "Pending"}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeCollaborator(collab.userId)}
+                      className="rounded-lg p-2 text-red-500 hover:bg-red-50"
+                      title="Remove collaborator"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 ))}
               </div>
