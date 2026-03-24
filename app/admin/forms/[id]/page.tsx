@@ -121,7 +121,6 @@ function SortableQuestion({
     isDragging,
   } = useSortable({
     id: question.id,
-    disabled: isLocked, // Prevent dragging locked items
   });
 
   const style = {
@@ -141,17 +140,15 @@ function SortableQuestion({
     >
       <div className="mb-4 flex flex-col sm:flex-row sm:items-start gap-3">
         <div className="flex items-center sm:items-start gap-2 w-full sm:w-auto">
-          {!isLocked && (
-            <div className="mt-0 sm:mt-2 flex flex-col gap-1">
-              <button
-                {...attributes}
-                {...listeners}
-                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 touch-none cursor-grab active:cursor-grabbing"
-              >
-                <GripVertical className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+          <div className="mt-0 sm:mt-2 flex flex-col gap-1">
+            <button
+              {...attributes}
+              {...listeners}
+              className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 touch-none cursor-grab active:cursor-grabbing"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+          </div>
           <div className="flex-1 sm:hidden">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-gray-500">
@@ -406,11 +403,6 @@ export default function FormBuilderPage() {
         
         const oldIndex = prev.questions.findIndex((q) => q.id === active.id);
         const newIndex = prev.questions.findIndex((q) => q.id === over.id);
-
-        // Keep locked items in place (sanity check, they shouldn't be draggable anyway)
-        if (Boolean(prev.questions[oldIndex]?.config?.locked) || Boolean(prev.questions[newIndex]?.config?.locked)) {
-          return prev;
-        }
 
         const newQuestions = [...prev.questions];
         const [movedQuestion] = newQuestions.splice(oldIndex, 1);
