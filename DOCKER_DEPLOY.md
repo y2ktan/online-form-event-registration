@@ -46,13 +46,13 @@ docker run -d \
   --name ai-form-registration \
   --restart unless-stopped \
   -p 3000:3000 \
-  -e DATABASE_URL="file:/app/prisma/dev.db" \
+  -e DATABASE_URL="file:/app/data/dev.db" \
   -e JWT_SECRET="your_super_secret_jwt_key" \
   -e NEXT_PUBLIC_TURNSTILE_SITE_KEY="your_site_key" \
   -e TURNSTILE_SECRET_KEY="your_secret_key" \
   -e INITIAL_ADMIN_PASSWORD="admin123" \
   -e NEXTAUTH_URL="https://vword.net" \
-  -v ai-form-registration_db:/app/prisma \
+  -v ai-form-registration_db:/app/data \
   -v ai-form-registration_uploads:/app/public/uploads \
   ghcr.io/y2ktan/ai-form-registration:latest
 ```
@@ -69,14 +69,14 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=file:/app/prisma/dev.db
+      - DATABASE_URL=file:/app/data/dev.db
       - JWT_SECRET=your_super_secret_jwt_key
       - NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_site_key
       - TURNSTILE_SECRET_KEY=your_secret_key
       - INITIAL_ADMIN_PASSWORD=admin123
       - NEXTAUTH_URL=https://vword.net
     volumes:
-      - ai-form-registration_db:/app/prisma
+      - ai-form-registration_db:/app/data
       - ai-form-registration_uploads:/app/public/uploads
     restart: always
 

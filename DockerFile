@@ -53,24 +53,28 @@ ENV NODE_ENV=production
 # ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN groupadd --system --gid 1001 nodejs
-RUN useradd --system --uid 1001 --gid nodejs nextjs
+RUN useradd --system --uid 1001 --gid nodejs -m nextjs
 
 COPY --from=builder /app/public ./public
 
 # Automatically leverage output traces to reduce image size
-# https://nextjsF.org/docs/advanced-features/output-file-tracing
+# https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy Prisma schema and entrypoint script
-#COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-#COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh ./docker-entrypoint.sh
+# Copy Prisma schema for migrations/push
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
-# Make entrypoint script executable
-#RUN chmod +x ./docker-entrypoint.sh
+# Copy Prisma CLI, client, and seed dependencies so they work inside the container
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+RUN mkdir -p ./node_modules/.bin && ln -s ../prisma/build/index.js ./node_modules/.bin/prisma
 
-# Create data directory for SQLite database with correct permissions
-RUN mkdir -p /app/prisma && chown -R nextjs:nodejs /app/prisma
+# Create data directory for SQLite database (separate from prisma schema dir)
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
 USER nextjs
 
@@ -79,4 +83,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-#ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# server.js is created by next build from the standalone output
+CMD ["node", "server.js"]
