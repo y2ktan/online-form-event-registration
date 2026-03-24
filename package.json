@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npx prisma db push && next dev -p 2277",
+    "dev": "npx prisma db push && next dev",
     "build": "npx prisma db push && next build",
-    "start": "next start -p 2277",
+    "start": "next start",
     "lint": "eslint",
     "setup": "npm install && npx prisma generate && npx prisma db push && npx prisma db seed",
     "db:push": "npx prisma db push",

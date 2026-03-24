@@ -8,7 +8,7 @@ The fastest way to deploy is using Docker. See [DOCKER_DEPLOY.md](./DOCKER_DEPLO
 
 ```bash
 docker build . -t ghcr.io/y2ktan/ai-form-registration:latest
-docker run -p 2277:2277 ghcr.io/y2ktan/ai-form-registration:latest
+docker run -p 3000:3000 ghcr.io/y2ktan/ai-form-registration:latest
 ```
 
 ## Tech Stack
@@ -61,7 +61,7 @@ npm run dev
 
 The database is automatically synced on every `npm run dev` and `npm run build`, so you never need to manually run migrations.
 
-Open [http://localhost:2277](http://localhost:2277) to view the app.
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
 ### 5. Log in
 

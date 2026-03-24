@@ -67,9 +67,9 @@ RUN mkdir -p /app/prisma && chown -R nextjs:nodejs /app/prisma
 
 USER nextjs
 
-EXPOSE 2277
+EXPOSE 3000
 
-ENV PORT=2277
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # server.js is created by next build from the standalone output
