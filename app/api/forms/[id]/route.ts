@@ -83,13 +83,29 @@ export async function PUT(
       });
 
       for (const q of body.questions) {
+        const config = q.config || {};
+        if (config.grid) {
+          if (Array.isArray(config.grid.rows)) {
+            config.grid.rows = config.grid.rows.map((r: any) => ({
+              ...r,
+              value: sanitize(r.value || ""),
+            }));
+          }
+          if (Array.isArray(config.grid.columns)) {
+            config.grid.columns = config.grid.columns.map((c: any) => ({
+              ...c,
+              value: sanitize(c.value || ""),
+            }));
+          }
+        }
+
         const questionData = {
           formId: id,
           type: sanitize(q.type),
           label: sanitize(q.label),
           isRequired: Boolean(q.isRequired),
           order: Number(q.order),
-          config: q.config ? JSON.stringify(q.config) : "{}",
+          config: JSON.stringify(config),
         };
 
         const question = await prisma.question.create({

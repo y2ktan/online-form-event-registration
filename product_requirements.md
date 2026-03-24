@@ -16,7 +16,11 @@ Build a full-stack Form Builder application that allows Admins to create, manage
   - **Text:** Short answer, Paragraph.
   - **Selection:** Multiple choice, Checkboxes, Dropdown.
   - **Advanced:** File upload (with size limits), Linear scale, Rating stars.
-  - **Grids:** Multiple choice grid, Checkbox grid.
+    - *Grids:*
+      - **Multiple Choice Grid:** Rows and columns where only one selection is allowed per row.
+      - **Checkbox Grid:** Rows and columns where multiple selections are allowed per row.
+      - **Configuration:** Admins can dynamically add, edit, and delete rows and columns.
+      - **Validation:** "Require a response in each row" toggle.
   - **Date/Time:** Specific picker components.
 - **Form Management:** Toggle "Published" status, view response counts, and delete forms (with cascade delete for questions).
 - **Field Configuration:** Admin can toggle whether each question is "Required" or "Optional".

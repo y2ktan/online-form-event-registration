@@ -4,10 +4,36 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { CheckCircle, ArrowLeft, Star } from "lucide-react";
 
+import { isGridType } from "@/lib/question-types";
+
 interface OptionData {
   id: string;
   value: string;
   order: number;
+}
+
+interface GridItem {
+  id: string;
+  value: string;
+}
+
+interface ValidationConfig {
+  type?: string;
+  rule?: string;
+  value?: string;
+  maxValue?: string;
+  errorMessage?: string;
+}
+
+interface QuestionConfig {
+  isPhoneNumber?: boolean;
+  validationEnabled?: boolean;
+  validation?: ValidationConfig;
+  grid?: {
+    rows: GridItem[];
+    columns: GridItem[];
+  };
+  [key: string]: unknown;
 }
 
 interface QuestionData {
@@ -17,7 +43,7 @@ interface QuestionData {
   isRequired: boolean;
   order: number;
   options: OptionData[];
-  config: string;
+  config: QuestionConfig | string;
 }
 
 interface AnswerData {
@@ -126,10 +152,38 @@ export default function AdminEditResponsePage() {
     for (const q of data.form.questions) {
       const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
       if (config?.isPhoneNumber) continue;
+      
+      const val = answers[q.id] || "";
+      
+      // Check required field
       if (q.isRequired) {
-        const val = answers[q.id];
-        if (!val || !val.trim() || val === "[]") {
-          errors[q.id] = `"${q.label}" is required.`;
+        if (isGridType(q.type as any)) {
+          try {
+            const gridAnswers = val ? JSON.parse(val) : {};
+            const rows = config.grid?.rows || [];
+            if (rows.length === 0) {
+              if (!val || val === "{}" || val === "[]") {
+                errors[q.id] = `"${q.label}" is required.`;
+                continue;
+              }
+            } else {
+              for (const row of rows) {
+                const rowAnswer = gridAnswers[row.id];
+                if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
+                  errors[q.id] = `"${q.label}": Each row requires a response.`;
+                  break;
+                }
+              }
+            }
+          } catch {
+            errors[q.id] = `"${q.label}" is required.`;
+          }
+          continue;
+        } else {
+          if (!val || !val.trim() || val === "[]") {
+            errors[q.id] = `"${q.label}" is required.`;
+            continue;
+          }
         }
       }
     }
@@ -390,6 +444,78 @@ export default function AdminEditResponsePage() {
                         />
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {(question.type === "MULTIPLE_CHOICE_GRID" ||
+                  question.type === "CHECKBOX_GRID") && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-left text-sm">
+                      <thead>
+                        <tr>
+                          <th className="border-b border-gray-200 py-3 pr-4 font-medium text-gray-500"></th>
+                          {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.columns?.map((col: { id: string, value: string }) => (
+                            <th key={col.id} className="border-b border-gray-200 px-4 py-3 text-center font-medium text-gray-500">
+                              {col.value}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.rows?.map((row: { id: string, value: string }) => (
+                          <tr key={row.id}>
+                            <td className="py-4 pr-4 font-medium text-gray-900">{row.value}</td>
+                            {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.columns?.map((col: { id: string, value: string }) => {
+                              const isSelected = (() => {
+                                const current = answers[question.id] || "{}";
+                                try {
+                                  const gridAnswers = JSON.parse(current);
+                                  if (question.type === "MULTIPLE_CHOICE_GRID") {
+                                    return gridAnswers[row.id] === col.id;
+                                  } else {
+                                    return Array.isArray(gridAnswers[row.id]) && gridAnswers[row.id].includes(col.id);
+                                  }
+                                } catch {
+                                  return false;
+                                }
+                              })();
+
+                              return (
+                                <td key={col.id} className="px-4 py-4 text-center">
+                                  <input
+                                    type={question.type === "MULTIPLE_CHOICE_GRID" ? "radio" : "checkbox"}
+                                    name={`grid-${question.id}-${row.id}`}
+                                    checked={isSelected}
+                                    onChange={() => {
+                                      setAnswers((prev) => {
+                                        const current = prev[question.id] || "{}";
+                                        let gridAnswers = {};
+                                        try {
+                                          gridAnswers = JSON.parse(current);
+                                        } catch {}
+
+                                        if (question.type === "MULTIPLE_CHOICE_GRID") {
+                                          gridAnswers = { ...gridAnswers, [row.id]: col.id };
+                                        } else {
+                                          const rowAnswers = Array.isArray((gridAnswers as any)[row.id]) ? [...(gridAnswers as any)[row.id]] : [];
+                                          if (rowAnswers.includes(col.id)) {
+                                            (gridAnswers as any)[row.id] = rowAnswers.filter((id: string) => id !== col.id);
+                                          } else {
+                                            (gridAnswers as any)[row.id] = [...rowAnswers, col.id];
+                                          }
+                                        }
+                                        return { ...prev, [question.id]: JSON.stringify(gridAnswers) };
+                                      });
+                                    }}
+                                    className={`h-4 w-4 text-indigo-600 focus:ring-indigo-500 ${question.type === "CHECKBOX_GRID" ? "rounded" : ""}`}
+                                  />
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

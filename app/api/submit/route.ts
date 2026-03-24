@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
+import { isGridType } from "@/lib/question-types";
+
+interface GridItem {
+  id: string;
+  value: string;
+}
 
 interface ValidationConfig {
   type?: string;
@@ -15,6 +21,10 @@ interface QuestionConfig {
   isPhoneNumber?: boolean;
   validationEnabled?: boolean;
   validation?: ValidationConfig;
+  grid?: {
+    rows: GridItem[];
+    columns: GridItem[];
+  };
   [key: string]: unknown;
 }
 
@@ -212,11 +222,43 @@ export async function POST(request: NextRequest) {
 
       // Check required field
       if (question.isRequired) {
-        if (!answer || (typeof answer === "string" && !answer.trim()) || answer === "[]") {
-          return NextResponse.json(
-            { error: `"${question.label}" is required.` },
-            { status: 400 }
-          );
+        if (isGridType(question.type as any)) {
+          try {
+            const gridAnswers = JSON.parse(answerValue);
+            const rows = config.grid?.rows || [];
+            
+            if (rows.length === 0) {
+              // Should not happen with proper UI but safety first
+              if (!answer || answerValue === "{}" || answerValue === "[]") {
+                return NextResponse.json(
+                  { error: `"${question.label}" is required.` },
+                  { status: 400 }
+                );
+              }
+            } else {
+              for (const row of rows) {
+                const rowAnswer = gridAnswers[row.id];
+                if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
+                  return NextResponse.json(
+                    { error: `"${question.label}": Each row requires a response.` },
+                    { status: 400 }
+                  );
+                }
+              }
+            }
+          } catch (e) {
+            return NextResponse.json(
+              { error: `"${question.label}" is required.` },
+              { status: 400 }
+            );
+          }
+        } else {
+          if (!answer || (typeof answer === "string" && !answer.trim()) || answer === "[]") {
+            return NextResponse.json(
+              { error: `"${question.label}" is required.` },
+              { status: 400 }
+            );
+          }
         }
       }
 

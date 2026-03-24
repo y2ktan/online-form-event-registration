@@ -53,6 +53,7 @@ import {
   QUESTION_TYPE_LABELS,
   QUESTION_TYPE_CATEGORIES,
   requiresOptions,
+  isGridType,
   type QuestionType,
 } from "@/lib/question-types";
 
@@ -61,6 +62,11 @@ interface OptionData {
   value: string;
   order: number;
   group: string;
+}
+
+interface GridItem {
+  id: string;
+  value: string;
 }
 
 interface ValidationConfig {
@@ -74,6 +80,10 @@ interface ValidationConfig {
 interface QuestionConfig {
   validationEnabled?: boolean;
   validation?: ValidationConfig;
+  grid?: {
+    rows: GridItem[];
+    columns: GridItem[];
+  };
   [key: string]: unknown;
 }
 
@@ -101,11 +111,19 @@ interface FormData {
 
 interface ResponseEntry {
   id: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
   createdAt: string;
   editToken: string;
   form: { title: string; id: string };
-  answers: { id: string; value: string; question: { label: string; type: string } }[];
+  answers: {
+    id: string;
+    value: string;
+    question: {
+      label: string;
+      type: string;
+      config: string | QuestionConfig;
+    };
+  }[];
 }
 
 let tempIdCounter = 0;
@@ -312,9 +330,131 @@ function SortableQuestion({
               </div>
             )}
 
-            {question.type === "TIME" && (
-              <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
-                Hour : Minute
+            {isGridType(question.type) && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Rows Section */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rows</h4>
+                    </div>
+                    <div className="space-y-2">
+                      {(question.config.grid?.rows || [
+                        { id: crypto.randomUUID(), value: "Row 1" }
+                      ]).map((row, rIndex) => (
+                        <div key={row.id} className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400 w-4">{rIndex + 1}.</span>
+                          <input
+                            type="text"
+                            value={row.value}
+                            onChange={(e) => {
+                              const newGrid = { 
+                                rows: [...(question.config.grid?.rows || [{ id: crypto.randomUUID(), value: "Row 1" }])],
+                                columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
+                              };
+                              newGrid.rows[rIndex] = { ...row, value: e.target.value };
+                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                            }}
+                            className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                            placeholder={`Row ${rIndex + 1}`}
+                          />
+                          <button
+                            onClick={() => {
+                              const rows = question.config.grid?.rows || [];
+                              if (rows.length <= 1) return;
+                              const newGrid = { 
+                                rows: rows.filter((_, i) => i !== rIndex),
+                                columns: question.config.grid?.columns || []
+                              };
+                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                            }}
+                            disabled={(question.config.grid?.rows?.length || 0) <= 1}
+                            className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => {
+                          const currentGrid = question.config.grid || { rows: [], columns: [] };
+                          const newGrid = {
+                            rows: [...(currentGrid.rows.length ? currentGrid.rows : [{ id: crypto.randomUUID(), value: "Row 1" }]), { id: crypto.randomUUID(), value: `Row ${(currentGrid.rows.length || 1) + 1}` }],
+                            columns: currentGrid.columns.length ? currentGrid.columns : [{ id: crypto.randomUUID(), value: "Column 1" }]
+                          };
+                          updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                        }}
+                        className="text-sm text-indigo-600 hover:text-indigo-500 flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" /> Add row
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Columns Section */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Columns</h4>
+                    </div>
+                    <div className="space-y-2">
+                      {(question.config.grid?.columns || [
+                        { id: crypto.randomUUID(), value: "Column 1" }
+                      ]).map((col, cIndex) => (
+                        <div key={col.id} className="flex items-center gap-2">
+                          <div className="h-4 w-4 flex-shrink-0">
+                            {question.type === "MULTIPLE_CHOICE_GRID" ? (
+                              <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                            ) : (
+                              <div className="h-4 w-4 rounded border-2 border-gray-300" />
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={col.value}
+                            onChange={(e) => {
+                              const newGrid = { 
+                                rows: [...(question.config.grid?.rows || [{ id: crypto.randomUUID(), value: "Row 1" }])],
+                                columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
+                              };
+                              newGrid.columns[cIndex] = { ...col, value: e.target.value };
+                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                            }}
+                            className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                            placeholder={`Column ${cIndex + 1}`}
+                          />
+                          <button
+                            onClick={() => {
+                              const cols = question.config.grid?.columns || [];
+                              if (cols.length <= 1) return;
+                              const newGrid = { 
+                                rows: question.config.grid?.rows || [],
+                                columns: cols.filter((_, i) => i !== cIndex)
+                              };
+                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                            }}
+                            disabled={(question.config.grid?.columns?.length || 0) <= 1}
+                            className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => {
+                          const currentGrid = question.config.grid || { rows: [], columns: [] };
+                          const newGrid = {
+                            rows: currentGrid.rows.length ? currentGrid.rows : [{ id: crypto.randomUUID(), value: "Row 1" }],
+                            columns: [...(currentGrid.columns.length ? currentGrid.columns : [{ id: crypto.randomUUID(), value: "Column 1" }]), { id: crypto.randomUUID(), value: `Column ${(currentGrid.columns.length || 1) + 1}` }]
+                          };
+                          updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                        }}
+                        className="text-sm text-indigo-600 hover:text-indigo-500 flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" /> Add column
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -692,7 +832,12 @@ export default function FormBuilderPage() {
       options: requiresOptions(type)
         ? [{ id: tempId(), value: "Option 1", order: 0, group: "default" }]
         : [],
-      config: {},
+      config: isGridType(type) ? {
+        grid: {
+          rows: [{ id: crypto.randomUUID(), value: "Row 1" }],
+          columns: [{ id: crypto.randomUUID(), value: "Column 1" }]
+        }
+      } : {},
     };
     setForm({ ...form, questions: [...form.questions, newQ] });
     setShowTypeMenu(false);
@@ -1253,7 +1398,46 @@ export default function FormBuilderPage() {
                           <span className="font-medium text-gray-700">
                             {a.question.label}:
                           </span>{" "}
-                          <span className="text-gray-600">{a.value}</span>
+                          <span className="text-gray-600">
+                            {(() => {
+                              if (isGridType(a.question.type as any)) {
+                                try {
+                                  const gridAnswers = JSON.parse(a.value);
+                                  const config = typeof a.question.config === "string" ? JSON.parse(a.question.config) : a.question.config;
+                                  const rows = config.grid?.rows || [];
+                                  const columns = config.grid?.columns || [];
+                                  
+                                  return (
+                                    <div className="mt-1 ml-4 space-y-1 border-l-2 border-gray-100 pl-3">
+                                      {rows.map((row: any) => {
+                                        const answer = gridAnswers[row.id];
+                                        if (!answer) return null;
+                                        
+                                        let displayValue = "";
+                                        if (Array.isArray(answer)) {
+                                          displayValue = answer
+                                            .map(colId => columns.find((c: any) => c.id === colId)?.value || colId)
+                                            .join(", ");
+                                        } else {
+                                          displayValue = columns.find((c: any) => c.id === answer)?.value || answer;
+                                        }
+                                        
+                                        return (
+                                          <div key={row.id} className="text-xs">
+                                            <span className="text-gray-500">{row.value}:</span>{" "}
+                                            <span className="text-gray-700 font-medium">{displayValue}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                } catch (e) {
+                                  return a.value;
+                                }
+                              }
+                              return a.value;
+                            })()}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -1357,6 +1541,38 @@ export default function FormBuilderPage() {
                                 <span className="text-xs text-gray-500">{n}</span>
                               </label>
                             ))}
+                          </div>
+                        )}
+                        {isGridType(question.type) && (
+                          <div className="overflow-x-auto mt-4">
+                            <table className="w-full border-collapse text-left text-sm">
+                              <thead>
+                                <tr>
+                                  <th className="border-b border-gray-200 py-3 pr-4 font-medium text-gray-500"></th>
+                                  {question.config.grid?.columns?.map((col: { id: string, value: string }) => (
+                                    <th key={col.id} className="border-b border-gray-200 px-4 py-3 text-center font-medium text-gray-500">
+                                      {col.value}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {question.config.grid?.rows?.map((row: { id: string, value: string }) => (
+                                  <tr key={row.id}>
+                                    <td className="py-4 pr-4 font-medium text-gray-900">{row.value}</td>
+                                    {question.config.grid?.columns?.map((col: { id: string, value: string }) => (
+                                      <td key={col.id} className="px-4 py-4 text-center">
+                                        <input
+                                          type={question.type === "MULTIPLE_CHOICE_GRID" ? "radio" : "checkbox"}
+                                          disabled
+                                          className={`h-4 w-4 text-indigo-600 focus:ring-indigo-500 ${question.type === "CHECKBOX_GRID" ? "rounded" : ""}`}
+                                        />
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
                         )}
                         {question.type === "RATING" && (

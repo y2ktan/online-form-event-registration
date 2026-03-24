@@ -3,6 +3,21 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
+import { isGridType } from "@/lib/question-types";
+
+interface GridItem {
+  id: string;
+  value: string;
+}
+
+interface QuestionConfig {
+  isPhoneNumber?: boolean;
+  grid?: {
+    rows: GridItem[];
+    columns: GridItem[];
+  };
+  [key: string]: unknown;
+}
 
 // GET a single response (admin or by editToken)
 export async function GET(
@@ -118,11 +133,45 @@ export async function PUT(
     for (const question of existing.form.questions) {
       if (question.isRequired) {
         const answer = answers[question.id];
-        if (!answer || (typeof answer === "string" && !answer.trim())) {
-          return NextResponse.json(
-            { error: `"${question.label}" is required.` },
-            { status: 400 }
-          );
+        const answerValue = typeof answer === "string" ? answer : JSON.stringify(answer);
+        const config = (typeof question.config === "string" ? JSON.parse(question.config) : question.config) as QuestionConfig;
+
+        if (isGridType(question.type as any)) {
+          try {
+            const gridAnswers = JSON.parse(answerValue);
+            const rows = config.grid?.rows || [];
+            
+            if (rows.length === 0) {
+              if (!answer || answerValue === "{}" || answerValue === "[]") {
+                return NextResponse.json(
+                  { error: `"${question.label}" is required.` },
+                  { status: 400 }
+                );
+              }
+            } else {
+              for (const row of rows) {
+                const rowAnswer = gridAnswers[row.id];
+                if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
+                  return NextResponse.json(
+                    { error: `"${question.label}": Each row requires a response.` },
+                    { status: 400 }
+                  );
+                }
+              }
+            }
+          } catch (e) {
+            return NextResponse.json(
+              { error: `"${question.label}" is required.` },
+              { status: 400 }
+            );
+          }
+        } else {
+          if (!answer || (typeof answer === "string" && !answer.trim()) || answer === "[]") {
+            return NextResponse.json(
+              { error: `"${question.label}" is required.` },
+              { status: 400 }
+            );
+          }
         }
       }
     }
