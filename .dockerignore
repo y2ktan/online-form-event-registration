@@ -15,4 +15,3 @@ README.md
 __tests__
 vitest.config.ts
 vitest.setup.ts
-package-lock.json

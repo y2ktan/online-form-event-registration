@@ -3,6 +3,9 @@
 # Use Debian-slim base
 FROM node:20-slim AS base
 
+# Install openssl and other dependencies needed by Prisma
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
@@ -33,6 +36,8 @@ COPY . .
 RUN npx prisma generate
 
 # Build Next.js
+# Provide a dummy DATABASE_URL for build-time if needed
+ENV DATABASE_URL="file:./dev.db"
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \
