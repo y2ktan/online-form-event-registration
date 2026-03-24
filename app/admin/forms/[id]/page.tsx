@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import {
   Plus,
@@ -30,6 +30,8 @@ import {
   ExternalLink,
   MoreVertical,
   Check,
+  Search,
+  Hash,
 } from "lucide-react";
 import {
   DndContext,
@@ -111,8 +113,10 @@ interface FormData {
 
 interface ResponseEntry {
   id: string;
+  shortCode: string;
   phoneNumber: string | null;
   createdAt: string;
+  updatedAt: string;
   editToken: string;
   form: { title: string; id: string };
   answers: {
@@ -711,6 +715,23 @@ export default function FormBuilderPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [responses, setResponses] = useState<ResponseEntry[]>([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredResponses = useMemo(() => {
+    if (!searchQuery.trim()) return responses;
+    const query = searchQuery.toLowerCase();
+    return responses.filter((resp) => {
+      // Search in shortCode
+      if (resp.shortCode?.toLowerCase().includes(query)) return true;
+      // Search in phoneNumber
+      if (resp.phoneNumber?.toLowerCase().includes(query)) return true;
+      // Search in answers
+      return resp.answers.some((ans) =>
+        ans.value.toLowerCase().includes(query) ||
+        ans.question.label.toLowerCase().includes(query)
+      );
+    });
+  }, [responses, searchQuery]);
 
   const loadedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1345,114 +1366,113 @@ export default function FormBuilderPage() {
 
         {/* Responses tab */}
         {activeTab === "responses" && (
-          <div>
-            <h2 className="mb-4 text-lg font-semibold text-gray-900">
-              Responses ({responses.length})
-            </h2>
+          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-xl font-bold text-gray-900">
+                Responses ({filteredResponses.length})
+              </h2>
+              <div className="relative flex-1 max-w-md">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search submissions (ID, phone, or any answer)..."
+                  className="block w-full rounded-lg border border-gray-300 bg-gray-50 py-2 pl-10 pr-3 text-sm placeholder-gray-500 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
             {responsesLoading ? (
               <div className="flex items-center justify-center py-12 text-gray-500">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 Loading responses…
               </div>
-            ) : responses.length === 0 ? (
+            ) : filteredResponses.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">
-                No responses yet.
+                {searchQuery ? "No matching responses found." : "No responses yet."}
               </div>
             ) : (
               <div className="space-y-4">
-                {responses.map((resp) => (
+                {filteredResponses.map((resp) => (
                   <div
                     key={resp.id}
-                    className="rounded-lg border bg-white p-3 shadow-sm sm:rounded-xl sm:p-5"
+                    className="overflow-hidden rounded-lg border bg-white shadow-sm sm:rounded-xl"
                   >
-                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="font-semibold text-gray-900">
-                          {resp.phoneNumber}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Submitted: {new Date(resp.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() =>
-                            router.push(`/admin/responses/${resp.id}`)
-                          }
-                          className="flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 sm:px-3 sm:text-sm"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(
-                              getEditLink(resp.id, resp.editToken)
-                            );
-                            alert("Edit link copied!");
-                          }}
-                          className="flex items-center gap-1 rounded-lg bg-indigo-100 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-200 sm:px-3 sm:text-sm"
-                        >
-                          <ClipboardCopy className="h-3.5 w-3.5" />
-                          Copy Link
-                        </button>
-                        <button
-                          onClick={() => handleDeleteResponse(resp.id)}
-                          className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 sm:px-3 sm:text-sm"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      {resp.answers.map((a) => (
-                        <div key={a.id} className="text-sm">
-                          <span className="font-medium text-gray-700">
-                            {a.question.label}:
-                          </span>{" "}
-                          <span className="text-gray-600">
-                            {(() => {
-                              if (isGridType(a.question.type as any)) {
-                                try {
-                                  const gridAnswers = JSON.parse(a.value);
-                                  const config = typeof a.question.config === "string" ? JSON.parse(a.question.config) : a.question.config;
-                                  const rows = config.grid?.rows || [];
-                                  const columns = config.grid?.columns || [];
-                                  
-                                  return (
-                                    <div className="mt-1 ml-4 space-y-1 border-l-2 border-gray-100 pl-3">
-                                      {rows.map((row: any) => {
-                                        const answer = gridAnswers[row.id];
-                                        if (!answer) return null;
-                                        
-                                        let displayValue = "";
-                                        if (Array.isArray(answer)) {
-                                          displayValue = answer
-                                            .map(colId => columns.find((c: any) => c.id === colId)?.value || colId)
-                                            .join(", ");
-                                        } else {
-                                          displayValue = columns.find((c: any) => c.id === answer)?.value || answer;
-                                        }
-                                        
-                                        return (
-                                          <div key={row.id} className="text-xs">
-                                            <span className="text-gray-500">{row.value}:</span>{" "}
-                                            <span className="text-gray-700 font-medium">{displayValue}</span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  );
-                                } catch (e) {
-                                  return a.value;
-                                }
-                              }
-                              return a.value;
-                            })()}
+                    <div className="bg-gray-50 border-b border-gray-100 px-4 py-2 sm:px-5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Hash className="h-3.5 w-3.5 text-gray-400" />
+                          <span className="text-xs font-mono font-bold text-indigo-600">
+                            {resp.shortCode}
                           </span>
                         </div>
-                      ))}
+                        <p className="text-[10px] sm:text-xs text-gray-500">
+                          Last activity: {new Date(resp.updatedAt || resp.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="p-3 sm:p-5">
+                      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-gray-900">
+                            {resp.phoneNumber || "Anonymous"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() =>
+                              router.push(`/admin/responses/${resp.id}`)
+                            }
+                            className="flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 sm:px-3 sm:text-sm"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(
+                                getEditLink(resp.id, resp.editToken)
+                              );
+                              alert("Edit link copied!");
+                            }}
+                            className="flex items-center gap-1 rounded-lg bg-indigo-100 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-200 sm:px-3 sm:text-sm"
+                          >
+                            <ClipboardCopy className="h-3.5 w-3.5" />
+                            Copy Link
+                          </button>
+                          <button
+                            onClick={() => handleDeleteResponse(resp.id)}
+                            className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 sm:px-3 sm:text-sm"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-2 border-t border-gray-50 pt-3">
+                        {resp.answers.slice(0, 3).map((a) => (
+                          <div key={a.id} className="text-sm">
+                            <span className="font-medium text-gray-700">
+                              {a.question.label}:
+                            </span>{" "}
+                            <span className="text-gray-600 truncate inline-block max-w-[200px] align-bottom">
+                              {(() => {
+                                if (isGridType(a.question.type as any)) {
+                                  return "Grid Response";
+                                }
+                                return a.value;
+                              })()}
+                            </span>
+                          </div>
+                        ))}
+                        {resp.answers.length > 3 && (
+                          <p className="text-xs text-gray-400 italic">
+                            + {resp.answers.length - 3} more fields
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

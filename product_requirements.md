@@ -32,6 +32,16 @@ Build a full-stack Form Builder application that allows Admins to create, manage
 - **Preview Mode:** A preview icon in the form editor toolbar allows the admin to temporarily view and try the form in a full-screen overlay without needing to publish it first.
 - **Responses Tab in Form Editor:** The form editor page includes a tab bar ("Questions" | "Responses"). The Responses tab lists all submissions for that form. Admin can edit or delete any submitted entry inline.
 - **Drag and Drop:** Admin can reorder questions inside the form builder by dragging and dropping them via a designated grip handle.
+- **Unique Submission Tracking (New):**
+  - **Generation:** Each successful submission generates a unique 6-character alphanumeric short code (e.g., XJ39K2).
+  - **Uniqueness:** Codes are unique within the scope of a specific Form ID.
+  - **Persistence:** Stored in the database; retained during edits.
+- **QR Code & Edit Functionality (New):**
+  - **QR Generation:** "Submission Success" page displays a QR code containing the unique edit URL.
+  - **Edit Mode UI:** Displays the 6-character short code as read-only at the top of the form.
+- **Responses Dashboard (New):**
+  - **Full-Text Search:** Search box in the Responses tab for filtering entries by any field content.
+  - **Summary Cards:** Each response displays its short code, latest activity timestamp (updatedAt), and a data snippet.
 - **Response Validation (New):** Provide a "frontend gatekeeper" to ensure data integrity.
   - **Availability:** Supported for Short Answer, Paragraph, and Checkboxes.
   - **Categories & Rules:**

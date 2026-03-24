@@ -65,11 +65,14 @@ model Response {
   id          String   @id @default(uuid())
   formId      String
   form        Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  shortCode   String
   phoneNumber String?  // Optional, only collected if form.collectPhone is true
   editToken   String   @unique @default(uuid())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   answers     Answer[]
+
+  @@unique([formId, shortCode])
 }
 
 model Answer {

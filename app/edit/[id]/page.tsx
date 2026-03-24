@@ -53,6 +53,7 @@ interface AnswerData {
 
 interface ResponseData {
   id: string;
+  shortCode: string;
   phoneNumber: string;
   form: {
     id: string;
@@ -283,18 +284,30 @@ function EditResponseForm() {
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
       <div className="mx-auto w-full max-w-2xl px-3 sm:px-4">
         {/* Form header */}
-        <div className="mb-4 rounded-lg border-t-4 border-t-indigo-600 bg-white p-4 shadow-sm sm:mb-6 sm:rounded-xl sm:p-6">
-          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h1 className="text-2xl font-bold text-gray-900">
-              {data.form.title}
-            </h1>
-            <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-800">
-              Editing Response
-            </span>
+        <div className="mb-4 overflow-hidden rounded-lg border-t-4 border-t-indigo-600 bg-white shadow-sm sm:mb-6 sm:rounded-xl">
+          <div className="bg-gray-50 border-b border-gray-100 px-4 py-2 sm:px-6">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Submission ID
+              </span>
+              <span className="font-mono font-bold text-indigo-600">
+                {data.shortCode}
+              </span>
+            </div>
           </div>
-          {data.form.description && (
-            <p className="mt-2 text-gray-600">{data.form.description}</p>
-          )}
+          <div className="p-4 sm:p-6">
+            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="text-2xl font-bold text-gray-900">
+                {data.form.title}
+              </h1>
+              <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-800">
+                Editing Response
+              </span>
+            </div>
+            {data.form.description && (
+              <p className="mt-2 text-gray-600">{data.form.description}</p>
+            )}
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

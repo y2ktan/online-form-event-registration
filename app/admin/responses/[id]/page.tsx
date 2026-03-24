@@ -54,6 +54,7 @@ interface AnswerData {
 
 interface ResponseData {
   id: string;
+  shortCode: string;
   phoneNumber: string;
   form: {
     id: string;
@@ -270,14 +271,28 @@ export default function AdminEditResponsePage() {
       </header>
 
       <div className="mx-auto w-full max-w-4xl px-3 py-4 sm:px-4 sm:py-8">
-        <div className="mb-4 rounded-lg border-t-4 border-t-indigo-600 bg-white p-4 shadow-sm sm:mb-6 sm:rounded-xl sm:p-6">
-          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h1 className="text-2xl font-bold text-gray-900">
-              {data.form.title}
-            </h1>
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-              Admin Edit Mode
-            </span>
+        <div className="mb-4 overflow-hidden rounded-lg border-t-4 border-t-indigo-600 bg-white shadow-sm sm:mb-6 sm:rounded-xl">
+          <div className="bg-gray-50 border-b border-gray-100 px-4 py-2 sm:px-6">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Submission ID
+              </span>
+              <span className="font-mono font-bold text-indigo-600">
+                {data.shortCode}
+              </span>
+            </div>
+          </div>
+          <div className="p-4 sm:p-6">
+            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="text-2xl font-bold text-gray-900">
+                {data.form.title}
+              </h1>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                  Admin Edit Mode
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 

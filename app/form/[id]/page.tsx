@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle, Star } from "lucide-react";
+import { CheckCircle, Star, QrCode, Copy, Check } from "lucide-react";
 import { isGridType } from "@/lib/question-types";
+import { QRCodeSVG } from "qrcode.react";
 
 interface OptionData {
   id: string;
@@ -67,6 +68,7 @@ export default function PublicFormPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submissionData, setSubmissionData] = useState<{ shortCode: string; editToken: string; responseId: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -351,6 +353,11 @@ export default function PublicFormPage() {
         return;
       }
 
+      setSubmissionData({
+        shortCode: data.shortCode,
+        editToken: data.editToken,
+        responseId: data.responseId,
+      });
       setShowPhoneDialog(false);
       setSubmitted(true);
     } catch {
@@ -382,17 +389,56 @@ export default function PublicFormPage() {
     );
   }
 
-  if (submitted) {
+  if (submitted && submissionData) {
+    const editUrl = `${window.location.origin}/edit/${submissionData.responseId}?token=${submissionData.editToken}`;
+
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="rounded-xl bg-white p-8 text-center shadow-sm">
-          <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
-          <h1 className="mt-4 text-xl font-bold text-gray-900">
-            Response Submitted!
-          </h1>
-          <p className="mt-2 text-gray-500">
-            Thank you for submitting your response.
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-xl">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
+            <CheckCircle className="h-10 w-10 text-green-600" />
+          </div>
+          <h1 className="mb-2 text-3xl font-bold text-gray-900">Submitted!</h1>
+          <p className="mb-8 text-gray-600">
+            Thank you for your response. Your submission has been recorded.
           </p>
+
+          <div className="mb-8 rounded-xl bg-gray-50 p-6">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              Submission ID
+            </p>
+            <p className="text-3xl font-mono font-bold text-indigo-600 tracking-widest">
+              {submissionData.shortCode}
+            </p>
+          </div>
+
+          <div className="mb-8 flex flex-col items-center justify-center space-y-4">
+            <div className="rounded-xl border-4 border-white bg-white p-2 shadow-md">
+              <QRCodeSVG value={editUrl} size={180} />
+            </div>
+            <p className="text-sm text-gray-500">
+              Scan to edit your submission later
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(editUrl);
+                alert("Edit link copied to clipboard!");
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              <Copy className="h-4 w-4" />
+              Copy Edit Link
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              Submit another response
+            </button>
+          </div>
         </div>
       </div>
     );

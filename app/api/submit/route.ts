@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
+import { generateShortCode } from "@/lib/short-code";
 
 interface GridItem {
   id: string;
@@ -279,10 +280,14 @@ export async function POST(request: NextRequest) {
       ([questionId]) => !phoneQuestionIds.has(questionId)
     );
 
+    // Generate unique short code for this submission
+    const shortCode = await generateShortCode(formId);
+
     // Create response with answers
     const response = await prisma.response.create({
       data: {
         form: { connect: { id: formId } },
+        shortCode,
         phoneNumber: form.collectPhone ? sanitize(phoneNumber) : null,
         answers: {
           create: filteredAnswers.map(
@@ -300,6 +305,7 @@ export async function POST(request: NextRequest) {
       success: true,
       responseId: response.id,
       editToken: response.editToken,
+      shortCode: response.shortCode,
     });
   } catch (error) {
     console.error("Submit error:", error);
