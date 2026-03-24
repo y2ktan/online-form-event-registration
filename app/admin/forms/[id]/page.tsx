@@ -78,6 +78,8 @@ interface FormData {
   published: boolean;
   collectPhone: boolean;
   phoneDescription: string;
+  phoneTitle: string;
+  phonePlaceholder: string;
   questions: QuestionData[];
 }
 
@@ -438,6 +440,10 @@ export default function FormBuilderPage() {
             title: form.title,
             description: form.description,
             published: form.published,
+            collectPhone: form.collectPhone,
+            phoneDescription: form.phoneDescription,
+            phoneTitle: form.phoneTitle,
+            phonePlaceholder: form.phonePlaceholder,
             questions: form.questions.map((q) => ({
               type: q.type,
               label: q.label,
@@ -779,16 +785,40 @@ export default function FormBuilderPage() {
                   }
                 </p>
                 {form.collectPhone && (
-                  <div className="flex flex-col gap-2 mt-4">
-                    <label className="text-sm font-medium text-gray-700">Dialog Description</label>
-                    <input
-                      type="text"
-                      value={form.phoneDescription || ""}
-                      onChange={(e) => setForm({ ...form, phoneDescription: e.target.value })}
-                      className="w-full sm:w-3/4 border-b border-gray-300 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none bg-gray-50 p-2 rounded-t"
-                      placeholder="e.g. We need to keep your phone number for future reference"
-                    />
-                    <p className="text-xs text-gray-500">This message will be shown in a popup dialog when the user clicks Submit.</p>
+                  <div className="space-y-4 mt-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-medium text-gray-700">Dialog Description</label>
+                      <input
+                        type="text"
+                        value={form.phoneDescription || ""}
+                        onChange={(e) => setForm({ ...form, phoneDescription: e.target.value })}
+                        className="w-full sm:w-3/4 border-b border-gray-300 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none bg-gray-50 p-2 rounded-t"
+                        placeholder="e.g. We need to keep your phone number for future reference"
+                      />
+                      <p className="text-xs text-gray-500">This message will be shown in a popup dialog when the user clicks Submit.</p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-medium text-gray-700">Field Title</label>
+                      <input
+                        type="text"
+                        value={form.phoneTitle || ""}
+                        onChange={(e) => setForm({ ...form, phoneTitle: e.target.value })}
+                        className="w-full sm:w-3/4 border-b border-gray-300 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none bg-gray-50 p-2 rounded-t"
+                        placeholder="Phone Number"
+                      />
+                      <p className="text-xs text-gray-500">Label shown above the input field in the dialog. Default: Phone Number</p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-medium text-gray-700">Field Placeholder</label>
+                      <input
+                        type="text"
+                        value={form.phonePlaceholder || ""}
+                        onChange={(e) => setForm({ ...form, phonePlaceholder: e.target.value })}
+                        className="w-full sm:w-3/4 border-b border-gray-300 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none bg-gray-50 p-2 rounded-t"
+                        placeholder="Enter your phone number"
+                      />
+                      <p className="text-xs text-gray-500">Placeholder text inside the input field. Default: Enter your phone number</p>
+                    </div>
                   </div>
                 )}
               </div>

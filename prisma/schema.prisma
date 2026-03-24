@@ -26,6 +26,8 @@ model Form {
   published   Boolean    @default(false)
   collectPhone Boolean   @default(true) // Whether to collect phone number for edits
   phoneDescription String @default("We need to keep your phone number for future reference")
+  phoneTitle       String @default("Phone Number")
+  phonePlaceholder String @default("Enter your phone number")
   authorId    String
   author      User       @relation(fields: [authorId], references: [id])
   createdAt   DateTime   @default(now())

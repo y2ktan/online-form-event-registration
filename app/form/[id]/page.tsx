@@ -27,6 +27,8 @@ interface FormData {
   published: boolean;
   collectPhone: boolean;
   phoneDescription: string;
+  phoneTitle: string;
+  phonePlaceholder: string;
   questions: QuestionData[];
 }
 
@@ -454,13 +456,13 @@ export default function PublicFormPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
             <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-2">Phone Number Required</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">{form.phoneTitle || "Phone Number"} Required</h3>
               <p className="text-sm text-gray-600 mb-6">
                 {form.phoneDescription || "We need to keep your phone number for future reference."}
               </p>
               
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+                <label className="block text-sm font-medium text-gray-700">{form.phoneTitle || "Phone Number"}</label>
                 <input
                   type="tel"
                   value={phoneNumber}
@@ -479,7 +481,7 @@ export default function PublicFormPage() {
                       ? "border-red-300 focus:border-red-500 focus:ring-red-500"
                       : "border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
                   }`}
-                  placeholder="Enter your phone number"
+                  placeholder={form.phonePlaceholder || "Enter your phone number"}
                   autoFocus
                 />
                 {fieldErrors["phoneNumber"] && (

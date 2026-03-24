@@ -67,6 +67,8 @@ export async function PUT(
     if (body.published !== undefined) updateData.published = Boolean(body.published);
     if (body.collectPhone !== undefined) updateData.collectPhone = Boolean(body.collectPhone);
     if (body.phoneDescription !== undefined) updateData.phoneDescription = sanitize(body.phoneDescription);
+    if (body.phoneTitle !== undefined) updateData.phoneTitle = sanitize(body.phoneTitle);
+    if (body.phonePlaceholder !== undefined) updateData.phonePlaceholder = sanitize(body.phonePlaceholder);
 
     await prisma.form.update({
       where: { id },
