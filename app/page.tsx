@@ -23,7 +23,7 @@ export default function Home() {
             className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
             <LogIn className="h-4 w-4" />
-            Admin Login
+            Login
           </Link>
         </div>
       </main>
