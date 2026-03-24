@@ -28,6 +28,8 @@ import {
   Pencil,
   Users,
   ExternalLink,
+  MoreVertical,
+  Check,
 } from "lucide-react";
 import {
   DndContext,
@@ -61,6 +63,20 @@ interface OptionData {
   group: string;
 }
 
+interface ValidationConfig {
+  type?: string;
+  rule?: string;
+  value?: string;
+  maxValue?: string;
+  errorMessage?: string;
+}
+
+interface QuestionConfig {
+  validationEnabled?: boolean;
+  validation?: ValidationConfig;
+  [key: string]: unknown;
+}
+
 interface QuestionData {
   id: string;
   type: QuestionType;
@@ -68,7 +84,7 @@ interface QuestionData {
   isRequired: boolean;
   order: number;
   options: OptionData[];
-  config: Record<string, unknown>;
+  config: QuestionConfig;
 }
 
 interface FormData {
@@ -116,6 +132,8 @@ function SortableQuestion({
   updateOption: (qIndex: number, oIndex: number, value: string) => void;
   removeOption: (qIndex: number, oIndex: number) => void;
 }) {
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+
   const {
     attributes,
     listeners,
@@ -306,17 +324,9 @@ function SortableQuestion({
                 File upload
               </div>
             )}
-
-            {(question.type === "MULTIPLE_CHOICE_GRID" ||
-              question.type === "CHECKBOX_GRID") && (
-              <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-400">
-                Grid (rows × columns)
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Question actions */}
         <div className="flex w-full sm:w-auto items-center justify-end gap-2 sm:border-l sm:pl-3 pt-3 sm:pt-0 border-t sm:border-t-0 mt-3 sm:mt-0">
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
             <span>Required</span>
@@ -341,6 +351,49 @@ function SortableQuestion({
               />
             </button>
           </label>
+          
+          <div className="relative">
+            <button
+              onClick={() => setShowMoreMenu((prev) => !prev)}
+              className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowMoreMenu(false)} />
+                <div className="absolute bottom-full right-0 mb-2 w-48 rounded-lg bg-white shadow-xl ring-1 ring-black ring-opacity-5 z-20">
+              <div className="py-1">
+                {(question.type === "SHORT_TEXT" || question.type === "PARAGRAPH" || question.type === "CHECKBOX") && (
+                  <button
+                    onClick={() => {
+                      const newConfig = { ...question.config };
+                      newConfig.validationEnabled = !newConfig.validationEnabled;
+                      if (!newConfig.validationEnabled) {
+                        delete newConfig.validation;
+                      } else {
+                        // Set defaults based on type
+                        if (question.type === "CHECKBOX") {
+                          newConfig.validation = { type: "CHECKBOX", rule: "AT_LEAST", value: "1", errorMessage: "" };
+                        } else {
+                          newConfig.validation = { type: "NUMBER", rule: "GREATER_THAN", value: "", errorMessage: "" };
+                        }
+                      }
+                      updateQuestion(qIndex, { config: newConfig });
+                      setShowMoreMenu(false);
+                    }}
+                    className="flex w-full items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <span>Response validation</span>
+                    {question.config?.validationEnabled && <Check className="h-3 w-3 text-indigo-600" />}
+                  </button>
+                )}
+              </div>
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             onClick={() => removeQuestion(qIndex)}
             className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
@@ -349,6 +402,145 @@ function SortableQuestion({
           </button>
         </div>
       </div>
+
+      {/* Response Validation Settings */}
+      {question.config?.validationEnabled && (
+        <div className="mt-4 border-t border-gray-100 pt-4 flex flex-wrap items-center gap-3">
+          <select
+            value={question.config.validation?.type || "NUMBER"}
+            onChange={(e) => {
+              const type = e.target.value;
+              const newConfig = { ...question.config };
+              let rule = "GREATER_THAN";
+              if (type === "TEXT") rule = "CONTAINS";
+              if (type === "LENGTH") rule = "MIN_CHARS";
+              if (type === "REGEX") rule = "MATCHES";
+              if (type === "CHECKBOX") rule = "AT_LEAST";
+              
+              newConfig.validation = { ...newConfig.validation, type, rule };
+              updateQuestion(qIndex, { config: newConfig });
+            }}
+            className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:border-indigo-500 focus:outline-none"
+          >
+            {question.type === "CHECKBOX" ? (
+              <option value="CHECKBOX">Select at least</option>
+            ) : (
+              <>
+                <option value="NUMBER">Number</option>
+                <option value="TEXT">Text</option>
+                <option value="LENGTH">Length</option>
+                <option value="REGEX">Regular expression</option>
+              </>
+            )}
+          </select>
+
+          <select
+            value={question.config.validation?.rule || ""}
+            onChange={(e) => {
+              const newConfig = { ...question.config };
+              newConfig.validation = { ...newConfig.validation, rule: e.target.value };
+              updateQuestion(qIndex, { config: newConfig });
+            }}
+            className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:border-indigo-500 focus:outline-none"
+          >
+            {question.config.validation?.type === "NUMBER" && (
+              <>
+                <option value="GREATER_THAN">Greater than</option>
+                <option value="GREATER_THAN_OR_EQUAL">Greater than or equal to</option>
+                <option value="LESS_THAN">Less than</option>
+                <option value="LESS_THAN_OR_EQUAL">Less than or equal to</option>
+                <option value="EQUAL_TO">Equal to</option>
+                <option value="NOT_EQUAL_TO">Not equal to</option>
+                <option value="BETWEEN">Between</option>
+                <option value="NOT_BETWEEN">Not between</option>
+                <option value="IS_NUMBER">Is number</option>
+                <option value="WHOLE_NUMBER">Whole number</option>
+              </>
+            )}
+            {question.config.validation?.type === "TEXT" && (
+              <>
+                <option value="CONTAINS">Contains</option>
+                <option value="DOES_NOT_CONTAIN">Doesn't contain</option>
+                <option value="EMAIL">Email</option>
+                <option value="URL">URL</option>
+              </>
+            )}
+            {question.config.validation?.type === "LENGTH" && (
+              <>
+                <option value="MAX_CHARS">Maximum character count</option>
+                <option value="MIN_CHARS">Minimum character count</option>
+              </>
+            )}
+            {question.config.validation?.type === "REGEX" && (
+              <>
+                <option value="CONTAINS">Contains</option>
+                <option value="DOES_NOT_CONTAIN">Doesn't contain</option>
+                <option value="MATCHES">Matches</option>
+                <option value="DOES_NOT_MATCH">Doesn't match</option>
+              </>
+            )}
+            {question.config.validation?.type === "CHECKBOX" && (
+              <>
+                <option value="AT_LEAST">Select at least</option>
+                <option value="AT_MOST">Select at most</option>
+                <option value="EXACTLY">Select exactly</option>
+              </>
+            )}
+          </select>
+
+          {question.config.validation?.rule && ["BETWEEN", "NOT_BETWEEN"].includes(question.config.validation.rule) ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={question.config.validation?.value || ""}
+                onChange={(e) => {
+                  const newConfig = { ...question.config };
+                  newConfig.validation = { ...newConfig.validation, value: e.target.value };
+                  updateQuestion(qIndex, { config: newConfig });
+                }}
+                className="w-20 rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+                placeholder="Number"
+              />
+              <span className="text-xs text-gray-500">and</span>
+              <input
+                type="text"
+                value={question.config.validation?.maxValue || ""}
+                onChange={(e) => {
+                  const newConfig = { ...question.config };
+                  newConfig.validation = { ...newConfig.validation, maxValue: e.target.value };
+                  updateQuestion(qIndex, { config: newConfig });
+                }}
+                className="w-20 rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+                placeholder="Number"
+              />
+            </div>
+          ) : question.config.validation?.rule && !["IS_NUMBER", "WHOLE_NUMBER", "EMAIL", "URL"].includes(question.config.validation.rule) && (
+            <input
+              type="text"
+              value={question.config.validation?.value || ""}
+              onChange={(e) => {
+                const newConfig = { ...question.config };
+                newConfig.validation = { ...newConfig.validation, value: e.target.value };
+                updateQuestion(qIndex, { config: newConfig });
+              }}
+              className="flex-1 min-w-[100px] rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+              placeholder={question.config.validation?.type === "REGEX" ? "Pattern" : "Value"}
+            />
+          )}
+
+          <input
+            type="text"
+            value={question.config.validation?.errorMessage || ""}
+            onChange={(e) => {
+              const newConfig = { ...question.config };
+              newConfig.validation = { ...newConfig.validation, errorMessage: e.target.value };
+              updateQuestion(qIndex, { config: newConfig });
+            }}
+            className="flex-1 min-w-[150px] rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
+            placeholder="Custom error text"
+          />
+        </div>
+      )}
     </div>
   );
 }

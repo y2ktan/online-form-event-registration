@@ -28,6 +28,18 @@ Build a full-stack Form Builder application that allows Admins to create, manage
 - **Preview Mode:** A preview icon in the form editor toolbar allows the admin to temporarily view and try the form in a full-screen overlay without needing to publish it first.
 - **Responses Tab in Form Editor:** The form editor page includes a tab bar ("Questions" | "Responses"). The Responses tab lists all submissions for that form. Admin can edit or delete any submitted entry inline.
 - **Drag and Drop:** Admin can reorder questions inside the form builder by dragging and dropping them via a designated grip handle.
+- **Response Validation (New):** Provide a "frontend gatekeeper" to ensure data integrity.
+  - **Availability:** Supported for Short Answer, Paragraph, and Checkboxes.
+  - **Categories & Rules:**
+    - *Number:* Greater than, Less than, Between, Is a Number, Whole Number.
+    - *Text:* Contains/Doesn't contain, Email, URL.
+    - *Length:* Maximum/Minimum character count.
+    - *Regular Expression:* Matches, Contains (advanced pattern matching).
+    - *Checkboxes:* Select at least, Select at most, Select exactly (X number).
+  - **Functional requirements:**
+    - Triggers: Validation occurs "on blur" or upon "Submit".
+    - Error Handling: Display red error state with a Custom Error Message defined by the creator.
+    - UI/UX: Validation settings tucked under a "More" (three-dot) menu for each question.
 - **Responsive UI:** All form builder layouts and public form pages must be fully responsive, supporting screen sizes from mobile devices up to large desktop monitors with low time complexity (high performance) layouts.
 
 **Respondent Interface**

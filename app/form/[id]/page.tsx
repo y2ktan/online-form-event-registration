@@ -10,6 +10,21 @@ interface OptionData {
   order: number;
 }
 
+interface ValidationConfig {
+  type?: string;
+  rule?: string;
+  value?: string;
+  maxValue?: string;
+  errorMessage?: string;
+}
+
+interface QuestionConfig {
+  isPhoneNumber?: boolean;
+  validationEnabled?: boolean;
+  validation?: ValidationConfig;
+  [key: string]: unknown;
+}
+
 interface QuestionData {
   id: string;
   type: string;
@@ -17,7 +32,7 @@ interface QuestionData {
   isRequired: boolean;
   order: number;
   options: OptionData[];
-  config: string;
+  config: QuestionConfig | string;
 }
 
 interface FormData {
@@ -97,6 +112,141 @@ export default function PublicFormPage() {
     }
   }
 
+  function validateAnswer(question: QuestionData, value: string): string | null {
+    const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+    
+    if (!config?.validationEnabled || !config.validation) {
+      return null;
+    }
+
+    const validation = config.validation;
+    const { type, rule, value: ruleValue, maxValue, errorMessage } = validation;
+
+    // Helper to get custom error or default
+    const getError = (defaultMsg: string) => errorMessage || defaultMsg;
+
+    // NUMBER validation
+    if (type === "NUMBER") {
+      const num = parseFloat(value);
+      const compareValue = parseFloat(ruleValue || "0");
+      const compareMax = parseFloat(maxValue || "0");
+
+      if (rule === "IS_NUMBER" && isNaN(num)) {
+        return getError("Must be a number");
+      }
+      if (rule === "WHOLE_NUMBER" && (!Number.isInteger(num) || isNaN(num))) {
+        return getError("Must be a whole number");
+      }
+      if (rule === "GREATER_THAN" && (isNaN(num) || num <= compareValue)) {
+        return getError(`Must be greater than ${ruleValue}`);
+      }
+      if (rule === "GREATER_THAN_OR_EQUAL" && (isNaN(num) || num < compareValue)) {
+        return getError(`Must be greater than or equal to ${ruleValue}`);
+      }
+      if (rule === "LESS_THAN" && (isNaN(num) || num >= compareValue)) {
+        return getError(`Must be less than ${ruleValue}`);
+      }
+      if (rule === "LESS_THAN_OR_EQUAL" && (isNaN(num) || num > compareValue)) {
+        return getError(`Must be less than or equal to ${ruleValue}`);
+      }
+      if (rule === "EQUAL_TO" && (isNaN(num) || num !== compareValue)) {
+        return getError(`Must be equal to ${ruleValue}`);
+      }
+      if (rule === "NOT_EQUAL_TO" && (isNaN(num) || num === compareValue)) {
+        return getError(`Must not be equal to ${ruleValue}`);
+      }
+      if (rule === "BETWEEN" && (isNaN(num) || num < compareValue || num > compareMax)) {
+        return getError(`Must be between ${ruleValue} and ${maxValue}`);
+      }
+      if (rule === "NOT_BETWEEN" && !isNaN(num) && num >= compareValue && num <= compareMax) {
+        return getError(`Must not be between ${ruleValue} and ${maxValue}`);
+      }
+    }
+
+    // TEXT validation
+    if (type === "TEXT") {
+      if (rule === "CONTAINS" && !value.includes(ruleValue || "")) {
+        return getError(`Must contain "${ruleValue}"`);
+      }
+      if (rule === "DOES_NOT_CONTAIN" && value.includes(ruleValue || "")) {
+        return getError(`Must not contain "${ruleValue}"`);
+      }
+      if (rule === "EMAIL") {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          return getError("Must be a valid email address");
+        }
+      }
+      if (rule === "URL") {
+        try {
+          new URL(value);
+        } catch {
+          return getError("Must be a valid URL");
+        }
+      }
+    }
+
+    // LENGTH validation
+    if (type === "LENGTH") {
+      const length = value.length;
+      const maxChars = parseInt(ruleValue || "0");
+      const minChars = parseInt(ruleValue || "0");
+
+      if (rule === "MAX_CHARS" && length > maxChars) {
+        return getError(`Must be at most ${ruleValue} characters`);
+      }
+      if (rule === "MIN_CHARS" && length < minChars) {
+        return getError(`Must be at least ${ruleValue} characters`);
+      }
+    }
+
+    // REGEX validation
+    if (type === "REGEX") {
+      try {
+        const regex = new RegExp(ruleValue || "");
+        const matches = regex.test(value);
+
+        if (rule === "CONTAINS" && !matches) {
+          return getError(`Must match pattern`);
+        }
+        if (rule === "DOES_NOT_CONTAIN" && matches) {
+          return getError(`Must not match pattern`);
+        }
+        if (rule === "MATCHES" && !matches) {
+          return getError(`Must match pattern`);
+        }
+        if (rule === "DOES_NOT_MATCH" && matches) {
+          return getError(`Must not match pattern`);
+        }
+      } catch {
+        return getError("Invalid pattern");
+      }
+    }
+
+    // CHECKBOX validation
+    if (type === "CHECKBOX" && question.type === "CHECKBOX") {
+      try {
+        const selected = value ? JSON.parse(value) : [];
+        const count = Array.isArray(selected) ? selected.length : 0;
+        const requiredCount = parseInt(ruleValue || "0");
+
+        if (rule === "AT_LEAST" && count < requiredCount) {
+          return getError(`Select at least ${ruleValue} option(s)`);
+        }
+        if (rule === "AT_MOST" && count > requiredCount) {
+          return getError(`Select at most ${ruleValue} option(s)`);
+        }
+        if (rule === "EXACTLY" && count !== requiredCount) {
+          return getError(`Select exactly ${ruleValue} option(s)`);
+        }
+      } catch {
+        return getError("Invalid selection");
+      }
+    }
+
+    return null;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form) return;
@@ -109,10 +259,22 @@ export default function PublicFormPage() {
     for (const q of form.questions) {
       const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
       if (config?.isPhoneNumber) continue;
+      
+      const val = answers[q.id] || "";
+      
+      // Check required field
       if (q.isRequired) {
-        const val = answers[q.id];
         if (!val || !val.trim() || val === "[]") {
           errors[q.id] = `"${q.label}" is required.`;
+          continue;
+        }
+      }
+      
+      // Check validation rules (only if answer is provided)
+      if (val && val.trim() && val !== "[]") {
+        const validationError = validateAnswer(q, val);
+        if (validationError) {
+          errors[q.id] = validationError;
         }
       }
     }
