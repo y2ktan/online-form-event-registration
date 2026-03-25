@@ -17,15 +17,20 @@ echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password
 ```
 
 ### Build for Production (multi-platform)
-To ensure the image runs on most VPS architectures (usually linux/amd64), use the following command:
+To ensure the image runs on most VPS architectures (usually linux/amd64), build **two images**: one for the app and one for DB initialization.
 
 ```bash
+# App image (lean, standalone Next.js only)
 docker build . -t ghcr.io/y2ktan/ai-form-registration:latest --platform linux/amd64
+
+# Init image (full node_modules for prisma db push / seed)
+docker build . -t ghcr.io/y2ktan/ai-form-registration:init --target init --platform linux/amd64
 ```
 
 ### Push to GHCR
 ```bash
 docker push ghcr.io/y2ktan/ai-form-registration:latest
+docker push ghcr.io/y2ktan/ai-form-registration:init
 ```
 
 ## 3. Deploy to VPS
@@ -90,12 +95,33 @@ volumes:
 docker compose up -d
 ```
 
-### Run Database Migrations/Seed
-After the container is running, you may need to initialize the database:
+### Initialize the Database
+After the app container is running, use the **init image** to set up the database. This runs as a one-off container that shares the same data volume, then auto-removes itself:
 
 ```bash
-docker exec -it ai-form-registration npx prisma db push
-docker exec -it ai-form-registration npx prisma db seed
+docker run --rm \
+  -e DATABASE_URL="file:/app/data/dev.db" \
+  -e INITIAL_ADMIN_PASSWORD="admin123" \
+  -v ai-form-registration_db:/app/data \
+  ghcr.io/y2ktan/ai-form-registration:init
+```
+
+You can also run individual commands:
+```bash
+# Push schema only
+docker run --rm \
+  -e DATABASE_URL="file:/app/data/dev.db" \
+  -v ai-form-registration_db:/app/data \
+  ghcr.io/y2ktan/ai-form-registration:init \
+  sh -c "npx prisma db push"
+
+# Seed only
+docker run --rm \
+  -e DATABASE_URL="file:/app/data/dev.db" \
+  -e INITIAL_ADMIN_PASSWORD="admin123" \
+  -v ai-form-registration_db:/app/data \
+  ghcr.io/y2ktan/ai-form-registration:init \
+  sh -c "npx prisma db seed"
 ```
 
 ## 4. Troubleshooting
