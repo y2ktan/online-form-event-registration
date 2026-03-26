@@ -1,14 +1,14 @@
-# Docker Deployment Guide for AI Form Registration
+# Professional Docker Deployment Guide
 
-This guide provides instructions on how to build, publish, and deploy the AI Form Registration app using Docker and GitHub Container Registry (GHCR).
+This guide provides the professional standard for deploying the AI Form Registration app to a VPS using **Docker Compose** with persistent storage.
 
-## 1. Prerequisites
-- Docker installed on your local machine.
-- A GitHub account and a Personal Access Token (PAT) with `write:packages` scope.
-- A VPS with Docker and Docker Compose installed.
+## 1. Why Docker Compose?
+For professional production deployments, Docker Compose is preferred over raw `docker run` because:
+* **Persistence**: It automatically manages named volumes for your database and uploads.
+* **Declarative**: All configuration (ports, env, volumes) is stored in one file.
+* **Lifecycle**: Simple commands to update (`pull` + `up`) without manual container management.
 
-## 2. Build and Publish to GitHub Container Registry (GHCR)
-
+## 2. Build and Publish
 Replace `YOUR_GITHUB_USERNAME` with your actual GitHub username.
 
 ### Authenticate with GHCR
@@ -16,54 +16,42 @@ Replace `YOUR_GITHUB_USERNAME` with your actual GitHub username.
 echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
 
-### Build for Production (multi-platform)
-To ensure the image runs on most VPS architectures (usually linux/amd64), build **two images**: one for the app and one for DB initialization.
+### Build and Push (App & Init)
+We build a lean **runner** image for the app and a separate **init** image for database schema updates.
 
 ```bash
-# App image (lean, standalone Next.js only)
+# Build for linux/amd64 (standard for most VPS)
 docker build . -t ghcr.io/y2ktan/ai-form-registration:latest --platform linux/amd64
-
-# Init image (full node_modules for prisma db push / seed)
 docker build . -t ghcr.io/y2ktan/ai-form-registration:init --target init --platform linux/amd64
-```
 
-### Push to GHCR
-```bash
+# Push to Registry
 docker push ghcr.io/y2ktan/ai-form-registration:latest
 docker push ghcr.io/y2ktan/ai-form-registration:init
 ```
 
-## 3. Deploy to VPS
+## 3. VPS Deployment (Professional Workflow)
 
-### Option A: Deployment via Docker Run (CLI)
-This is the recommended way to quickly update and run the container.
+### Step 1: Prepare Environment
+On your VPS, create a directory for the app and a `.env` file:
 
 ```bash
-# 1. Pull the latest image
-docker pull ghcr.io/y2ktan/ai-form-registration:latest
-
-# 2. Stop and remove existing container (if any)
-docker stop ai-form-registration || true
-docker rm ai-form-registration || true
-
-# 3. Run the container
-docker run -d \
-  --name ai-form-registration \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -e DATABASE_URL="file:/app/data/dev.db" \
-  -e JWT_SECRET="your_super_secret_jwt_key" \
-  -e NEXT_PUBLIC_TURNSTILE_SITE_KEY="your_site_key" \
-  -e TURNSTILE_SECRET_KEY="your_secret_key" \
-  -e INITIAL_ADMIN_PASSWORD="admin123" \
-  -e NEXTAUTH_URL="https://vword.net" \
-  -v ai-form-registration_db:/app/data \
-  -v ai-form-registration_uploads:/app/public/uploads \
-  ghcr.io/y2ktan/ai-form-registration:latest
+mkdir -p ~/app && cd ~/app
+nano .env
 ```
 
-### Option B: Deployment via Docker Compose
-Create a directory for the app and a `docker-compose.yml` file:
+Add your production secrets to `.env`:
+```env
+DATABASE_URL="file:/app/data/dev.db"
+JWT_SECRET="generate-a-long-random-string"
+INITIAL_ADMIN_PASSWORD="secure-admin-password"
+NEXTAUTH_URL="https://yourdomain.com"
+# Turnstile Keys (if used)
+NEXT_PUBLIC_TURNSTILE_SITE_KEY="your-key"
+TURNSTILE_SECRET_KEY="your-secret"
+```
+
+### Step 2: Create docker-compose.yml
+Docker Compose will automatically create the persistent volumes (`db_data` and `upload_data`) if they don't exist. **You do NOT need to run `docker volume create` manually.**
 
 ```yaml
 # docker-compose.yml
@@ -71,59 +59,53 @@ services:
   app:
     image: ghcr.io/y2ktan/ai-form-registration:latest
     container_name: ai-form-registration
+    restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      - DATABASE_URL=file:/app/data/dev.db
-      - JWT_SECRET=your_super_secret_jwt_key
-      - NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_site_key
-      - TURNSTILE_SECRET_KEY=your_secret_key
-      - INITIAL_ADMIN_PASSWORD=admin123
-      - NEXTAUTH_URL=https://vword.net
+    env_file: .env
     volumes:
-      - ai-form-registration_db:/app/data
-      - ai-form-registration_uploads:/app/public/uploads
-    restart: always
+      - db_data:/app/data
+      - upload_data:/app/public/uploads
+
+  # Initialization service (run manually when needed)
+  init:
+    image: ghcr.io/y2ktan/ai-form-registration:init
+    env_file: .env
+    volumes:
+      - db_data:/app/data
+    profiles:
+      - maintenance  # Prevents auto-start with 'docker compose up'
 
 volumes:
-  ai-form-registration_db:
-  ai-form-registration_uploads:
+  db_data:      # Keeps dev.db persistent
+  upload_data:  # Keeps captured photos persistent
 ```
 
-### Launch (if using Compose)
+### Step 3: Launch and Initialize
 ```bash
+# 1. Start the application
 docker compose up -d
+
+# 2. Initialize the database (Run migrations and seed)
+# This uses the 'init' image to update the shared db_data volume
+docker compose run --rm init
 ```
 
-### Initialize the Database
-After the app container is running, use the **init image** to set up the database. This runs as a one-off container that shares the same data volume, then auto-removes itself:
 
+## 4. Maintenance & Updates
+
+### How to release a new version?
+When you push a new image to GHCR, updating your VPS is simple:
 ```bash
-docker run --rm \
-  -e DATABASE_URL="file:/app/data/dev.db" \
-  -e INITIAL_ADMIN_PASSWORD="admin123" \
-  -v ai-form-registration_db:/app/data \
-  ghcr.io/y2ktan/ai-form-registration:init
+docker compose pull
+docker compose up -d
+# If there are DB schema changes, run the init container again (Step 3.2)
 ```
 
-You can also run individual commands:
-```bash
-# Push schema only
-docker run --rm \
-  -e DATABASE_URL="file:/app/data/dev.db" \
-  -v ai-form-registration_db:/app/data \
-  ghcr.io/y2ktan/ai-form-registration:init \
-  sh -c "npx prisma db push"
+### Checking Persistence
+Your data is stored in Docker-managed volumes. Even if you delete the container or update the image, your database and photos stay safe.
+* **Logs**: `docker compose logs -f`
+* **Volume Info**: `docker volume ls`
 
-# Seed only
-docker run --rm \
-  -e DATABASE_URL="file:/app/data/dev.db" \
-  -e INITIAL_ADMIN_PASSWORD="admin123" \
-  -v ai-form-registration_db:/app/data \
-  ghcr.io/y2ktan/ai-form-registration:init \
-  sh -c "npx prisma db seed"
-```
-
-## 4. Troubleshooting
-- **Logs**: View logs with `docker logs -f ai-form-registration`.
-- **Permissions**: If the SQLite database fails to write, ensure the `./data` directory on your VPS has the correct permissions (the container runs as user `nextjs` with UID 1001).
+## 5. Security & Permissions
+The `Dockerfile` is optimized to run as a non-root user (`nextjs` UID 1001). The `/app/data` and `/app/public/uploads` directories are pre-configured with correct ownership. Docker named volumes will inherit these permissions, ensuring the app can always write to the database and save new photos.

@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle, ArrowLeft, Star } from "lucide-react";
+import { CheckCircle, ArrowLeft, Star, Camera, X } from "lucide-react";
+import CameraCapture from "@/components/CameraCapture";
 
 import { isGridType } from "@/lib/question-types";
 
@@ -79,6 +80,10 @@ export default function AdminEditResponsePage() {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [showCamera, setShowCamera] = useState<{
+    questionId: string;
+    show: boolean;
+  }>({ questionId: "", show: false });
 
   const fetchResponse = useCallback(async () => {
     const res = await fetch(`/api/responses/${responseId}`);
@@ -420,6 +425,49 @@ export default function AdminEditResponsePage() {
                   </select>
                 )}
 
+                {question.type === "SELFIE" && (
+                  <div className="space-y-4">
+                    {answers[question.id] ? (
+                      <div className="relative inline-block">
+                        <img
+                          src={answers[question.id]}
+                          alt="Captured selfie"
+                          className="h-48 w-auto rounded-lg border object-cover shadow-sm"
+                        />
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowCamera({ questionId: question.id, show: true })}
+                            className="text-sm text-indigo-600 hover:text-indigo-500 flex items-center gap-1"
+                          >
+                            <Camera className="h-4 w-4" />
+                            Retake Selfie
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateAnswer(question.id, "")}
+                            className="text-sm text-red-600 hover:text-red-500 flex items-center gap-1"
+                          >
+                            <X className="h-4 w-4" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowCamera({ questionId: question.id, show: true })
+                        }
+                        className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-indigo-200 bg-indigo-50/50 py-8 text-indigo-600 transition-colors hover:bg-indigo-50"
+                      >
+                        <Camera className="h-6 w-6" />
+                        <span className="font-medium">Take a Selfie</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {question.type === "LINEAR_SCALE" && (
                   <div className="flex items-center gap-3">
                     {[1, 2, 3, 4, 5].map((n) => (
@@ -548,6 +596,37 @@ export default function AdminEditResponsePage() {
           </div>
         </form>
       </div>
+
+      {/* Camera Capture Modal */}
+      {showCamera.show && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md">
+            <CameraCapture
+              onCapture={async (blob) => {
+                try {
+                  const formData = new FormData();
+                  formData.append("file", blob, "selfie.jpg");
+
+                  const res = await fetch("/api/upload", {
+                    method: "POST",
+                    body: formData,
+                  });
+
+                  if (!res.ok) throw new Error("Upload failed");
+
+                  const data = await res.json();
+                  updateAnswer(showCamera.questionId, data.path);
+                  setShowCamera({ questionId: "", show: false });
+                } catch (err) {
+                  console.error("Selfie upload error:", err);
+                  alert("Failed to upload selfie. Please try again.");
+                }
+              }}
+              onCancel={() => setShowCamera({ questionId: "", show: false })}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

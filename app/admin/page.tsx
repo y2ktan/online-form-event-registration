@@ -16,6 +16,7 @@ import {
   KeyRound,
   Settings,
   ChevronDown,
+  Camera,
 } from "lucide-react";
 
 interface CurrentUser {
@@ -450,16 +451,25 @@ export default function AdminDashboard() {
                         </button>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      {resp.answers.map((a) => (
-                        <div key={a.id} className="text-sm">
-                          <span className="font-medium text-gray-700">
-                            {a.question.label}:
-                          </span>{" "}
-                          <span className="text-gray-600">{a.value}</span>
+                        <div className="space-y-1">
+                          {resp.answers.map((a) => (
+                            <div key={a.id} className="text-sm">
+                              <span className="font-medium text-gray-700">
+                                {a.question.label}:
+                              </span>{" "}
+                              <span className="text-gray-600">
+                                {a.question.type === "SELFIE" ? (
+                                  <span className="flex items-center gap-1 text-indigo-600">
+                                    <Camera className="h-3 w-3" />
+                                    Selfie Captured
+                                  </span>
+                                ) : (
+                                  a.value
+                                )}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
                   </div>
                 ))}
               </div>

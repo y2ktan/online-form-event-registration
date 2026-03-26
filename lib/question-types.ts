@@ -11,6 +11,7 @@ export const QUESTION_TYPES = {
   CHECKBOX_GRID: "CHECKBOX_GRID",
   DATE: "DATE",
   TIME: "TIME",
+  SELFIE: "SELFIE",
 } as const;
 
 export type QuestionType = (typeof QUESTION_TYPES)[keyof typeof QUESTION_TYPES];
@@ -28,6 +29,7 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   CHECKBOX_GRID: "Checkbox Grid",
   DATE: "Date",
   TIME: "Time",
+  SELFIE: "Selfie",
 };
 
 export const QUESTION_TYPE_CATEGORIES = {
@@ -39,6 +41,7 @@ export const QUESTION_TYPE_CATEGORIES = {
   ],
   Advanced: [
     QUESTION_TYPES.FILE_UPLOAD,
+    QUESTION_TYPES.SELFIE,
     QUESTION_TYPES.LINEAR_SCALE,
     QUESTION_TYPES.RATING,
   ],

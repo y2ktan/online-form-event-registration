@@ -32,6 +32,7 @@ import {
   Check,
   Search,
   Hash,
+  Camera,
 } from "lucide-react";
 import {
   DndContext,
@@ -463,9 +464,15 @@ function SortableQuestion({
             )}
 
             {question.type === "FILE_UPLOAD" && (
-              <div className="rounded border border-dashed border-gray-300 px-3 py-4 text-center text-sm text-gray-400">
-                <Upload className="mx-auto mb-1 h-5 w-5" />
-                File upload
+              <div className="rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-400">
+                File upload input
+              </div>
+            )}
+
+            {question.type === "SELFIE" && (
+              <div className="rounded border border-dashed border-gray-300 px-3 py-8 flex flex-col items-center justify-center gap-2 text-sm text-gray-400">
+                <Camera className="h-8 w-8 text-gray-300" />
+                <span>Selfie / Camera Capture</span>
               </div>
             )}
           </div>
@@ -1050,6 +1057,8 @@ export default function FormBuilderPage() {
         return <List className="h-4 w-4" />;
       case "FILE_UPLOAD":
         return <Upload className="h-4 w-4" />;
+      case "SELFIE":
+        return <Camera className="h-4 w-4" />;
       case "LINEAR_SCALE":
         return <ToggleLeft className="h-4 w-4" />;
       case "RATING":
@@ -1564,6 +1573,14 @@ export default function FormBuilderPage() {
                               {(() => {
                                 if (isGridType(a.question.type as any)) {
                                   return "Grid Response";
+                                }
+                                if (a.question.type === "SELFIE") {
+                                  return (
+                                    <span className="flex items-center gap-1 text-indigo-600">
+                                      <Camera className="h-3 w-3" />
+                                      Selfie Captured
+                                    </span>
+                                  );
                                 }
                                 return a.value;
                               })()}
