@@ -17,6 +17,8 @@ import {
   Settings,
   ChevronDown,
   Camera,
+  Copy,
+  Loader2,
 } from "lucide-react";
 
 interface CurrentUser {
@@ -62,6 +64,7 @@ export default function AdminDashboard() {
   const [showCurrentPwd, setShowCurrentPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [copyingFormId, setCopyingFormId] = useState<string | null>(null);
 
   const isAdmin = currentUser?.role === "ADMIN";
 
@@ -126,6 +129,24 @@ export default function AdminDashboard() {
     const res = await fetch(`/api/forms/${id}`, { method: "DELETE" });
     if (res.ok) {
       setForms((prev) => prev.filter((f) => f.id !== id));
+    }
+  }
+
+  async function handleCopyForm(id: string) {
+    setCopyingFormId(id);
+    try {
+      const res = await fetch(`/api/forms/${id}/copy`, { method: "POST" });
+      if (res.ok) {
+        const newForm = await res.json();
+        router.push(`/admin/forms/${newForm.id}`);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to copy form.");
+      }
+    } catch {
+      alert("Failed to copy form.");
+    } finally {
+      setCopyingFormId(null);
     }
   }
 
@@ -369,6 +390,18 @@ export default function AdminDashboard() {
                               <ExternalLink className="h-4 w-4" />
                             </button>
                           )}
+                          <button
+                            onClick={() => handleCopyForm(form.id)}
+                            disabled={copyingFormId === form.id}
+                            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                            title="Make a copy"
+                          >
+                            {copyingFormId === form.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </button>
                           <button
                             onClick={() => handleDeleteForm(form.id)}
                             className="rounded-lg p-2 text-red-500 hover:bg-red-50"
