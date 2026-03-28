@@ -124,3 +124,69 @@ export function removeRoutingForOption(
   delete newRules[optionValue];
   return { ...config, routing: { ...routing, rules: newRules } };
 }
+
+// ─── "Other" option helpers ─────────────────────────────────────────
+
+/**
+ * For MULTIPLE_CHOICE: check if the current answer is a custom "Other" value
+ * (i.e. the answer doesn't match any predefined option).
+ */
+export function isOtherSelectedForRadio(
+  answer: string | undefined,
+  predefinedValues: Set<string>
+): boolean {
+  return answer !== undefined && !predefinedValues.has(answer);
+}
+
+/**
+ * For CHECKBOX: check if any value in the JSON array is a custom "Other" value.
+ */
+export function isOtherCheckedForCheckbox(
+  answerJson: string,
+  predefinedValues: Set<string>
+): boolean {
+  try {
+    const vals: string[] = JSON.parse(answerJson || "[]");
+    return vals.some((v) => !predefinedValues.has(v));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * For CHECKBOX: update the JSON answer array to toggle the "Other" value.
+ * If toggling on, appends otherText. If toggling off, removes non-predefined values.
+ * Returns the new JSON string.
+ */
+export function toggleOtherInCheckbox(
+  answerJson: string,
+  predefinedValues: Set<string>,
+  otherTextValue: string,
+  currentlyChecked: boolean
+): string {
+  let vals: string[];
+  try { vals = JSON.parse(answerJson || "[]"); } catch { vals = []; }
+  if (currentlyChecked) {
+    vals = vals.filter((v) => predefinedValues.has(v));
+  } else {
+    vals.push(otherTextValue);
+  }
+  return JSON.stringify(vals);
+}
+
+/**
+ * For CHECKBOX: replace the "Other" text value in the JSON answer array.
+ * Removes any non-predefined value and appends the new text.
+ * Returns the new JSON string.
+ */
+export function updateOtherTextInCheckbox(
+  answerJson: string,
+  predefinedValues: Set<string>,
+  newText: string
+): string {
+  let vals: string[];
+  try { vals = JSON.parse(answerJson || "[]"); } catch { vals = []; }
+  vals = vals.filter((v) => predefinedValues.has(v));
+  vals.push(newText);
+  return JSON.stringify(vals);
+}

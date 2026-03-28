@@ -97,6 +97,7 @@ interface QuestionConfig {
   validationEnabled?: boolean;
   validation?: ValidationConfig;
   routing?: RoutingConfig;
+  hasOtherOption?: boolean;
   grid?: {
     rows: GridItem[];
     columns: GridItem[];
@@ -372,12 +373,44 @@ function SortableQuestion({
                     </button>
                   </div>
                 ))}
-                <button
-                  onClick={() => addOption(sectionIndex, qIndex)}
-                  className="text-sm text-indigo-600 hover:text-indigo-500"
-                >
-                  + Add option
-                </button>
+                {/* "Other" option row (non-editable label, removable) */}
+                {question.config?.hasOtherOption && (question.type === "MULTIPLE_CHOICE" || question.type === "CHECKBOX") && (
+                  <div className="flex items-center gap-2">
+                    {question.type === "MULTIPLE_CHOICE" && (
+                      <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                    )}
+                    {question.type === "CHECKBOX" && (
+                      <div className="h-4 w-4 rounded border-2 border-gray-300" />
+                    )}
+                    <span className="text-sm text-gray-500 italic">Other...</span>
+                    <div className="flex-1 border-b border-dashed border-gray-300" />
+                    <button
+                      onClick={() => updateQuestion(sectionIndex, qIndex, { config: { ...question.config, hasOtherOption: false } })}
+                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => addOption(sectionIndex, qIndex)}
+                    className="text-sm text-indigo-600 hover:text-indigo-500"
+                  >
+                    + Add option
+                  </button>
+                  {!question.config?.hasOtherOption && (question.type === "MULTIPLE_CHOICE" || question.type === "CHECKBOX") && (
+                    <>
+                      <span className="text-sm text-gray-400">or</span>
+                      <button
+                        onClick={() => updateQuestion(sectionIndex, qIndex, { config: { ...question.config, hasOtherOption: true } })}
+                        className="text-sm text-indigo-600 hover:text-indigo-500"
+                      >
+                        add &quot;Other&quot;
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             )}
 

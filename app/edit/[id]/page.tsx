@@ -4,6 +4,12 @@ import { useEffect, useState, useCallback, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { CheckCircle, Star } from "lucide-react";
 import { isGridType } from "@/lib/question-types";
+import {
+  isOtherSelectedForRadio,
+  isOtherCheckedForCheckbox,
+  toggleOtherInCheckbox,
+  updateOtherTextInCheckbox,
+} from "@/lib/form-helpers";
 
 interface OptionData {
   id: string;
@@ -28,6 +34,7 @@ interface QuestionConfig {
   isPhoneNumber?: boolean;
   validationEnabled?: boolean;
   validation?: ValidationConfig;
+  hasOtherOption?: boolean;
   grid?: {
     rows: GridItem[];
     columns: GridItem[];
@@ -72,6 +79,7 @@ function EditResponseForm() {
 
   const [data, setData] = useState<ResponseData | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [phoneNumber, setPhoneNumber] = useState("");
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -94,10 +102,29 @@ function EditResponseForm() {
       setPhoneNumber(respData.phoneNumber);
 
       const initialAnswers: Record<string, string> = {};
+      const initialOtherText: Record<string, string> = {};
       respData.answers.forEach((ans: AnswerData) => {
         initialAnswers[ans.questionId] = ans.value;
       });
+      // Pre-populate otherText for questions where saved answer is a custom "Other" value
+      for (const q of respData.form.questions) {
+        const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+        if (!config?.hasOtherOption) continue;
+        const savedValue = initialAnswers[q.id];
+        if (!savedValue) continue;
+        const optionValues = new Set(q.options.map((o: OptionData) => o.value));
+        if (q.type === "MULTIPLE_CHOICE" && !optionValues.has(savedValue)) {
+          initialOtherText[q.id] = savedValue;
+        } else if (q.type === "CHECKBOX") {
+          try {
+            const vals: string[] = JSON.parse(savedValue);
+            const otherVal = vals.find((v) => !optionValues.has(v));
+            if (otherVal !== undefined) initialOtherText[q.id] = otherVal;
+          } catch { /* ignore */ }
+        }
+      }
       setAnswers(initialAnswers);
+      setOtherText(initialOtherText);
     } else {
       setNotFound(true);
     }
@@ -375,7 +402,11 @@ function EditResponseForm() {
                   />
                 )}
 
-                {question.type === "MULTIPLE_CHOICE" && (
+                {question.type === "MULTIPLE_CHOICE" && (() => {
+                  const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+                  const optionValues = new Set(question.options.map((o) => o.value));
+                  const isOtherSelected = config?.hasOtherOption && isOtherSelectedForRadio(answers[question.id], optionValues);
+                  return (
                   <div className="space-y-2">
                     {question.options.map((opt) => (
                       <label
@@ -395,10 +426,40 @@ function EditResponseForm() {
                         </span>
                       </label>
                     ))}
+                    {config?.hasOtherOption && (
+                      <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50">
+                        <input
+                          type="radio"
+                          name={`q-${question.id}`}
+                          checked={isOtherSelected}
+                          onChange={() => updateAnswer(question.id, otherText[question.id] || "")}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-500">Other:</span>
+                        <input
+                          type="text"
+                          value={isOtherSelected ? (otherText[question.id] ?? answers[question.id] ?? "") : (otherText[question.id] || "")}
+                          onChange={(e) => {
+                            setOtherText((prev) => ({ ...prev, [question.id]: e.target.value }));
+                            if (isOtherSelected) updateAnswer(question.id, e.target.value);
+                          }}
+                          onFocus={() => {
+                            if (!isOtherSelected) updateAnswer(question.id, otherText[question.id] || "");
+                          }}
+                          className="flex-1 border-b border-gray-300 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                          placeholder="Type your answer"
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
+                  );
+                })()}
 
-                {question.type === "CHECKBOX" && (
+                {question.type === "CHECKBOX" && (() => {
+                  const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+                  const optionValues = new Set(question.options.map((o) => o.value));
+                  const isOtherChecked = config?.hasOtherOption && isOtherCheckedForCheckbox(answers[question.id] || "[]", optionValues);
+                  return (
                   <div className="space-y-2">
                     {question.options.map((opt) => (
                       <label
@@ -416,8 +477,49 @@ function EditResponseForm() {
                         </span>
                       </label>
                     ))}
+                    {config?.hasOtherOption && (
+                      <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={isOtherChecked}
+                          onChange={() => {
+                            setAnswers((prev) => ({
+                              ...prev,
+                              [question.id]: toggleOtherInCheckbox(prev[question.id] || "[]", optionValues, otherText[question.id] || "", isOtherChecked),
+                            }));
+                          }}
+                          className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-500">Other:</span>
+                        <input
+                          type="text"
+                          value={otherText[question.id] || ""}
+                          onChange={(e) => {
+                            const newVal = e.target.value;
+                            setOtherText((prev) => ({ ...prev, [question.id]: newVal }));
+                            if (isOtherChecked) {
+                              setAnswers((prev) => ({
+                                ...prev,
+                                [question.id]: updateOtherTextInCheckbox(prev[question.id] || "[]", optionValues, newVal),
+                              }));
+                            }
+                          }}
+                          onFocus={() => {
+                            if (!isOtherChecked) {
+                              setAnswers((prev) => ({
+                                ...prev,
+                                [question.id]: toggleOtherInCheckbox(prev[question.id] || "[]", optionValues, otherText[question.id] || "", false),
+                              }));
+                            }
+                          }}
+                          className="flex-1 border-b border-gray-300 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                          placeholder="Type your answer"
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {question.type === "DROPDOWN" && (
                   <select

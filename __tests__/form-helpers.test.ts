@@ -5,6 +5,10 @@ import {
   reorderQuestionWithinSection,
   updateRoutingOnOptionRename,
   removeRoutingForOption,
+  isOtherSelectedForRadio,
+  isOtherCheckedForCheckbox,
+  toggleOtherInCheckbox,
+  updateOtherTextInCheckbox,
 } from "../lib/form-helpers";
 
 // ─── Test data factories ────────────────────────────────────────────
@@ -247,5 +251,105 @@ describe("removeRoutingForOption", () => {
     };
     removeRoutingForOption(config, "Yes");
     expect(config.routing.rules).toEqual({ Yes: "s2", No: "SUBMIT" });
+  });
+});
+
+// ─── isOtherSelectedForRadio ────────────────────────────────────────
+
+describe("isOtherSelectedForRadio", () => {
+  const predefined = new Set(["Option A", "Option B"]);
+
+  test("returns true when answer is not a predefined option", () => {
+    expect(isOtherSelectedForRadio("Custom answer", predefined)).toBe(true);
+  });
+
+  test("returns false when answer matches a predefined option", () => {
+    expect(isOtherSelectedForRadio("Option A", predefined)).toBe(false);
+  });
+
+  test("returns false when answer is undefined", () => {
+    expect(isOtherSelectedForRadio(undefined, predefined)).toBe(false);
+  });
+
+  test("returns true for empty string (Other selected, no text yet)", () => {
+    expect(isOtherSelectedForRadio("", predefined)).toBe(true);
+  });
+});
+
+// ─── isOtherCheckedForCheckbox ──────────────────────────────────────
+
+describe("isOtherCheckedForCheckbox", () => {
+  const predefined = new Set(["Red", "Blue"]);
+
+  test("returns true when array contains a non-predefined value", () => {
+    expect(isOtherCheckedForCheckbox(JSON.stringify(["Red", "Custom"]), predefined)).toBe(true);
+  });
+
+  test("returns false when all values are predefined", () => {
+    expect(isOtherCheckedForCheckbox(JSON.stringify(["Red", "Blue"]), predefined)).toBe(false);
+  });
+
+  test("returns false for empty array", () => {
+    expect(isOtherCheckedForCheckbox("[]", predefined)).toBe(false);
+  });
+
+  test("returns false for empty string", () => {
+    expect(isOtherCheckedForCheckbox("", predefined)).toBe(false);
+  });
+
+  test("returns false for invalid JSON", () => {
+    expect(isOtherCheckedForCheckbox("not-json", predefined)).toBe(false);
+  });
+});
+
+// ─── toggleOtherInCheckbox ──────────────────────────────────────────
+
+describe("toggleOtherInCheckbox", () => {
+  const predefined = new Set(["Red", "Blue"]);
+
+  test("adds other text when toggling on", () => {
+    const result = toggleOtherInCheckbox(JSON.stringify(["Red"]), predefined, "Custom", false);
+    expect(JSON.parse(result)).toEqual(["Red", "Custom"]);
+  });
+
+  test("removes non-predefined values when toggling off", () => {
+    const result = toggleOtherInCheckbox(JSON.stringify(["Red", "Custom"]), predefined, "Custom", true);
+    expect(JSON.parse(result)).toEqual(["Red"]);
+  });
+
+  test("handles empty answer when toggling on", () => {
+    const result = toggleOtherInCheckbox("", predefined, "My answer", false);
+    expect(JSON.parse(result)).toEqual(["My answer"]);
+  });
+
+  test("handles invalid JSON gracefully", () => {
+    const result = toggleOtherInCheckbox("bad-json", predefined, "Custom", false);
+    expect(JSON.parse(result)).toEqual(["Custom"]);
+  });
+});
+
+// ─── updateOtherTextInCheckbox ──────────────────────────────────────
+
+describe("updateOtherTextInCheckbox", () => {
+  const predefined = new Set(["Red", "Blue"]);
+
+  test("replaces old other value with new text", () => {
+    const result = updateOtherTextInCheckbox(JSON.stringify(["Red", "OldCustom"]), predefined, "NewCustom");
+    expect(JSON.parse(result)).toEqual(["Red", "NewCustom"]);
+  });
+
+  test("preserves predefined values", () => {
+    const result = updateOtherTextInCheckbox(JSON.stringify(["Red", "Blue", "Other"]), predefined, "Updated");
+    expect(JSON.parse(result)).toEqual(["Red", "Blue", "Updated"]);
+  });
+
+  test("handles empty answer", () => {
+    const result = updateOtherTextInCheckbox("", predefined, "Custom");
+    expect(JSON.parse(result)).toEqual(["Custom"]);
+  });
+
+  test("handles invalid JSON gracefully", () => {
+    const result = updateOtherTextInCheckbox("bad-json", predefined, "Custom");
+    expect(JSON.parse(result)).toEqual(["Custom"]);
   });
 });
