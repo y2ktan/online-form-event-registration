@@ -36,6 +36,8 @@ import {
   Camera,
   Undo2,
   Redo2,
+  Palette,
+  Download,
 } from "lucide-react";
 import {
   DndContext,
@@ -76,6 +78,7 @@ import {
   removeSectionWithQuestions,
   FormHistory,
 } from "@/lib/form-helpers";
+import { type FormTheme, DEFAULT_THEME, parseTheme, serializeTheme, COLOR_PRESETS, BG_PRESETS, HEADER_IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/theme";
 
 interface OptionData {
   id: string;
@@ -141,6 +144,8 @@ interface FormData {
   phoneDescription: string;
   phoneTitle: string;
   phonePlaceholder: string;
+  theme: FormTheme;
+  notifyEmails: string;
   sections: SectionData[];
   questions: QuestionData[];
 }
@@ -863,6 +868,7 @@ export default function FormBuilderPage() {
   const [collabLoading, setCollabLoading] = useState(false);
   const [collabSearch, setCollabSearch] = useState("");
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const historyRef = useRef(new FormHistory<FormData>(50));
@@ -959,7 +965,7 @@ export default function FormBuilderPage() {
           questions,
         });
       }
-      setForm({ ...data, sections, questions });
+      setForm({ ...data, theme: parseTheme(data.theme), notifyEmails: data.notifyEmails || "", sections, questions });
     }
   }, [formId]);
 
@@ -991,6 +997,8 @@ export default function FormBuilderPage() {
             phoneDescription: form.phoneDescription,
             phoneTitle: form.phoneTitle,
             phonePlaceholder: form.phonePlaceholder,
+            theme: serializeTheme(form.theme),
+            notifyEmails: form.notifyEmails,
             sections: form.sections.map((s) => ({
               title: s.title,
               description: s.description,
@@ -1455,6 +1463,14 @@ export default function FormBuilderPage() {
                 <span className="hidden sm:inline">Open</span>
               </button>
               <button
+                onClick={() => setShowThemeEditor(!showThemeEditor)}
+                className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm ${showThemeEditor ? "bg-indigo-100 text-indigo-700" : "text-gray-600 hover:bg-gray-100"}`}
+                title="Customize theme"
+              >
+                <Palette className="h-4 w-4" />
+                <span className="hidden sm:inline">Theme</span>
+              </button>
+              <button
                 onClick={() => setShowPreview(true)}
                 className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
                 title="Preview form"
@@ -1508,11 +1524,145 @@ export default function FormBuilderPage() {
         </div>
       </header>
 
+      {/* Theme Editor Panel */}
+      {showThemeEditor && (
+        <div className="mx-auto w-full max-w-4xl px-3 pt-3 sm:px-4 sm:pt-4">
+          <div className="rounded-xl border bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">Theme Customization</h3>
+              <button onClick={() => setShowThemeEditor(false)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Primary Color */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Primary Color</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {COLOR_PRESETS.map((c) => (
+                    <button
+                      key={c.value}
+                      onClick={() => setForm({ ...form, theme: { ...form.theme, primaryColor: c.value } })}
+                      className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${form.theme.primaryColor === c.value ? "border-gray-900 scale-110" : "border-transparent"}`}
+                      style={{ backgroundColor: c.value }}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+              {/* Background Color */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Background</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {BG_PRESETS.map((c) => (
+                    <button
+                      key={c.value}
+                      onClick={() => setForm({ ...form, theme: { ...form.theme, backgroundColor: c.value } })}
+                      className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${form.theme.backgroundColor === c.value ? "border-gray-900 scale-110" : "border-gray-300"}`}
+                      style={{ backgroundColor: c.value }}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+              {/* Font Family */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Font</label>
+                <div className="flex gap-1.5">
+                  {(["sans", "serif", "mono"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setForm({ ...form, theme: { ...form.theme, fontFamily: f } })}
+                      className={`rounded-lg border px-3 py-1 text-xs capitalize ${form.theme.fontFamily === f ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                      style={{ fontFamily: f === "sans" ? "sans-serif" : f === "serif" ? "serif" : "monospace" }}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Border Radius */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Corners</label>
+                <div className="flex gap-1.5">
+                  {(["sm", "md", "lg"] as const).map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setForm({ ...form, theme: { ...form.theme, borderRadius: r } })}
+                      className={`rounded-lg border px-3 py-1 text-xs ${form.theme.borderRadius === r ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                    >
+                      {r === "sm" ? "Square" : r === "md" ? "Rounded" : "Pill"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {/* Header Image */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Header Image</label>
+              {form.theme.headerImage ? (
+                <div className="relative group">
+                  <img src={form.theme.headerImage} alt="Header" className="w-full rounded-lg border" />
+                  <button
+                    onClick={() => setForm({ ...form, theme: { ...form.theme, headerImage: "" } })}
+                    className="absolute top-1.5 right-1.5 rounded-full bg-black/60 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove header image"
+                  ><X className="h-3.5 w-3.5" /></button>
+                </div>
+              ) : (
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 py-6 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <Upload className="h-4 w-4" />
+                  <span>Upload image (max 5 MB, supports GIF)</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > HEADER_IMAGE_MAX_BYTES) {
+                        alert("File too large. Maximum size is 5 MB.");
+                        return;
+                      }
+                      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+                        alert("Unsupported image format.");
+                        return;
+                      }
+                      const fd = new FormData();
+                      fd.append("file", file);
+                      try {
+                        const res = await fetch("/api/upload", { method: "POST", body: fd });
+                        if (!res.ok) { const d = await res.json(); alert(d.error || "Upload failed"); return; }
+                        const { path } = await res.json();
+                        setForm({ ...form, theme: { ...form.theme, headerImage: path } });
+                      } catch { alert("Upload failed"); }
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+            {form.theme.primaryColor !== DEFAULT_THEME.primaryColor || form.theme.backgroundColor !== DEFAULT_THEME.backgroundColor || form.theme.fontFamily !== DEFAULT_THEME.fontFamily || form.theme.borderRadius !== DEFAULT_THEME.borderRadius || form.theme.headerImage !== DEFAULT_THEME.headerImage ? (
+              <button
+                onClick={() => setForm({ ...form, theme: { ...DEFAULT_THEME } })}
+                className="mt-3 text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Reset to defaults
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto w-full max-w-4xl px-3 py-3 sm:px-4 sm:py-8">
         {activeTab === "questions" && (
           <>
+        {/* Header image preview in builder */}
+        {form.theme.headerImage && (
+          <div className="mb-0 overflow-hidden rounded-t-lg sm:rounded-t-xl">
+            <img src={form.theme.headerImage} alt="" className="w-full" />
+          </div>
+        )}
         {/* Form title and description */}
-        <div className="mb-3 rounded-lg border-t-4 border-t-indigo-600 bg-white p-3 shadow-sm sm:mb-6 sm:rounded-xl sm:p-6">
+        <div className={`mb-3 bg-white p-3 shadow-sm sm:mb-6 sm:p-6 ${form.theme.headerImage ? "rounded-b-lg sm:rounded-b-xl" : "rounded-lg border-t-4 sm:rounded-xl"}`} style={{ borderTopColor: form.theme.headerImage ? undefined : form.theme.primaryColor }}>
           <input
             type="text"
             value={form.title}
@@ -1607,6 +1757,21 @@ export default function FormBuilderPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Email Notifications */}
+            <div className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-gray-900">Email Notifications</h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">Get notified by email when someone submits this form. Requires SMTP to be configured.</p>
+              <input
+                type="text"
+                value={form.notifyEmails}
+                onChange={(e) => setForm({ ...form, notifyEmails: e.target.value })}
+                className="w-full border-b border-gray-300 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none bg-gray-50 p-2 rounded-t"
+                placeholder="email1@example.com, email2@example.com"
+              />
             </div>
 
             {form.sections.map((section, sIndex) => {
@@ -1831,17 +1996,32 @@ export default function FormBuilderPage() {
               <h2 className="text-xl font-bold text-gray-900">
                 Responses ({filteredResponses.length})
               </h2>
-              <div className="relative flex-1 max-w-md">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <Search className="h-4 w-4 text-gray-400" />
+              <div className="flex items-center gap-2 flex-1 max-w-md">
+                <div className="relative flex-1">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                    <Search className="h-4 w-4 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search submissions (ID, phone, or any answer)..."
+                    className="block w-full rounded-lg border border-gray-300 bg-gray-50 py-2 pl-10 pr-3 text-sm placeholder-gray-500 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
                 </div>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search submissions (ID, phone, or any answer)..."
-                  className="block w-full rounded-lg border border-gray-300 bg-gray-50 py-2 pl-10 pr-3 text-sm placeholder-gray-500 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
+                <button
+                  onClick={() => {
+                    const a = document.createElement("a");
+                    a.href = `/api/forms/${formId}/export`;
+                    a.download = "";
+                    a.click();
+                  }}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm"
+                  title="Export responses as CSV"
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">Export CSV</span>
+                </button>
               </div>
             </div>
             {responsesLoading ? (

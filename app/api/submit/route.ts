@@ -4,6 +4,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
 import { generateShortCode } from "@/lib/short-code";
+import { parseNotifyEmails, buildNotificationHtml } from "@/lib/notifications";
 
 interface GridItem {
   id: string;
@@ -300,6 +301,38 @@ export async function POST(request: NextRequest) {
       },
       include: { answers: true },
     });
+
+    // Fire-and-forget: send email notifications if configured
+    const notifyRecipients = parseNotifyEmails((form as any).notifyEmails);
+    if (notifyRecipients.length > 0) {
+      (async () => {
+        try {
+          const { default: nodemailer } = await import("nodemailer");
+          const { prisma: db } = await import("@/lib/prisma");
+          const smtpConfig = await db.smtpConfig.findFirst({ orderBy: { updatedAt: "desc" } });
+          if (!smtpConfig) return;
+          const transporter = nodemailer.createTransport({
+            host: smtpConfig.host,
+            port: smtpConfig.port,
+            secure: smtpConfig.secure,
+            auth: { user: smtpConfig.user, pass: smtpConfig.pass },
+          });
+          const answerSummary = filteredAnswers.map(([qId, val]) => {
+            const q = form.questions.find((qq: any) => qq.id === qId);
+            return { label: q?.label || "Unknown", value: String(val), type: q?.type || "SHORT_TEXT" };
+          });
+          const html = buildNotificationHtml(form.title, shortCode, form.collectPhone ? sanitize(phoneNumber) : null, answerSummary);
+          await transporter.sendMail({
+            from: `"${smtpConfig.fromName}" <${smtpConfig.fromEmail}>`,
+            to: notifyRecipients.join(","),
+            subject: `New submission: ${form.title} [${shortCode}]`,
+            html,
+          });
+        } catch (e) {
+          console.error("Notification email failed:", e);
+        }
+      })();
+    }
 
     return NextResponse.json({
       success: true,

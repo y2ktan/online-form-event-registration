@@ -90,6 +90,8 @@ export async function PUT(
     if (body.phoneDescription !== undefined) updateData.phoneDescription = sanitize(body.phoneDescription);
     if (body.phoneTitle !== undefined) updateData.phoneTitle = sanitize(body.phoneTitle);
     if (body.phonePlaceholder !== undefined) updateData.phonePlaceholder = sanitize(body.phonePlaceholder);
+    if (body.theme !== undefined) updateData.theme = typeof body.theme === "string" ? body.theme : JSON.stringify(body.theme);
+    if (body.notifyEmails !== undefined) updateData.notifyEmails = sanitize(String(body.notifyEmails));
 
     await prisma.form.update({
       where: { id },

@@ -24,6 +24,7 @@ import {
   toggleOtherInCheckbox,
   updateOtherTextInCheckbox,
 } from "@/lib/form-helpers";
+import { parseTheme, themeToCssVars, primaryTint, type FormTheme } from "@/lib/theme";
 
 interface OptionData {
   id: string;
@@ -85,6 +86,7 @@ interface FormData {
   phoneDescription: string;
   phoneTitle: string;
   phonePlaceholder: string;
+  theme: FormTheme;
   sections: SectionData[];
   questions: QuestionData[];
 }
@@ -136,7 +138,7 @@ export default function PublicFormPage() {
           questions,
         });
       }
-      setForm({ ...data, sections });
+      setForm({ ...data, theme: parseTheme(data.theme), sections });
     } else {
       setNotFound(true);
     }
@@ -583,11 +585,20 @@ export default function PublicFormPage() {
       })
     : [];
 
+  const themeVars = themeToCssVars(form.theme);
+  const pc = form.theme.primaryColor;
+
   return (
-    <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+    <div className="min-h-screen py-4 sm:py-8" style={{ ...themeVars, backgroundColor: themeVars["--theme-bg"], fontFamily: themeVars["--theme-font"] } as React.CSSProperties}>
       <div className="mx-auto w-full max-w-2xl px-3 sm:px-4">
+        {/* Header image banner */}
+        {form.theme.headerImage && (
+          <div className="mb-0 overflow-hidden" style={{ borderRadius: `${themeVars["--theme-radius"]} ${themeVars["--theme-radius"]} 0 0` }}>
+            <img src={form.theme.headerImage} alt="" className="w-full" />
+          </div>
+        )}
         {/* Form header */}
-        <div className="mb-4 rounded-lg border-t-4 border-t-indigo-600 bg-white p-4 shadow-sm sm:mb-6 sm:rounded-xl sm:p-6">
+        <div className={`mb-4 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 ${form.theme.headerImage ? "" : "border-t-4"}`} style={{ borderTopColor: form.theme.headerImage ? undefined : pc, borderRadius: form.theme.headerImage ? `0 0 ${themeVars["--theme-radius"]} ${themeVars["--theme-radius"]}` : themeVars["--theme-radius"] }}>
           <h1 className="text-2xl font-bold text-gray-900">{form.title}</h1>
           {form.description && (
             <p className="mt-2 text-gray-600">{form.description}</p>
@@ -597,8 +608,8 @@ export default function PublicFormPage() {
             <div className="mt-3 flex items-center gap-2">
               <div className="flex-1 bg-gray-200 rounded-full h-1.5">
                 <div
-                  className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${((currentSectionIndex + 1) / form.sections.length) * 100}%` }}
+                  className="h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${((currentSectionIndex + 1) / form.sections.length) * 100}%`, backgroundColor: pc }}
                 />
               </div>
               <span className="text-xs text-gray-500 whitespace-nowrap">
@@ -610,7 +621,7 @@ export default function PublicFormPage() {
 
         {/* Section header (only show if multi-section and section has a title) */}
         {isMultiSection && currentSection && (currentSection.title || currentSection.description) && (
-          <div className="mb-4 rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6 border-l-4 border-l-indigo-400">
+          <div className="mb-4 bg-white p-4 shadow-sm sm:p-6 border-l-4" style={{ borderLeftColor: pc, borderRadius: themeVars["--theme-radius"] }}>
             {currentSection.title && (
               <h2 className="text-lg font-semibold text-gray-900">{currentSection.title}</h2>
             )}
@@ -629,7 +640,7 @@ export default function PublicFormPage() {
 
           {/* Dynamic questions for current section */}
           {nonPhoneQuestions.map((question) => (
-            <div key={question.id} className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
+            <div key={question.id} className="bg-white p-4 shadow-sm sm:p-6" style={{ borderRadius: themeVars["--theme-radius"] }}>
               <label className="block text-base font-medium text-gray-900">
                 {question.label}
                 {question.isRequired && (
@@ -1007,7 +1018,8 @@ export default function PublicFormPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+                  className="rounded-lg px-6 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+                  style={{ backgroundColor: pc }}
                 >
                   {submitting ? "Submitting..." : "Next"}
                 </button>
@@ -1015,7 +1027,8 @@ export default function PublicFormPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+                  className="rounded-lg px-6 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+                  style={{ backgroundColor: pc }}
                 >
                   {submitting ? "Submitting..." : "Submit"}
                 </button>
@@ -1126,7 +1139,8 @@ export default function PublicFormPage() {
                   submitForm();
                 }}
                 disabled={submitting}
-                className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
+                className="rounded-lg px-6 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+                style={{ backgroundColor: pc }}
               >
                 {submitting ? "Submitting..." : "Submit Form"}
               </button>

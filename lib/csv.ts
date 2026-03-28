@@ -1,0 +1,92 @@
+/**
+ * Pure CSV generation helpers.
+ *
+ * escapeCsvField — O(n) where n = field length.
+ * responsesToCsv — O(R * Q) where R = responses, Q = questions.
+ */
+
+/** Escape a single CSV field (RFC 4180). */
+export function escapeCsvField(value: string): string {
+  if (value.includes('"') || value.includes(",") || value.includes("\n") || value.includes("\r")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+export interface CsvResponse {
+  shortCode: string;
+  phoneNumber?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  answers: { questionId: string; value: string }[];
+}
+
+export interface CsvQuestion {
+  id: string;
+  label: string;
+  type: string;
+}
+
+/**
+ * Convert responses + questions into a CSV string.
+ *
+ * Columns: Submission ID, Phone, Submitted At, Updated At, [question labels...]
+ * Time:  O(R * Q) — one pass per response to build each row.
+ * Space: O(R * Q) — the output string.
+ */
+export function responsesToCsv(
+  responses: CsvResponse[],
+  questions: CsvQuestion[],
+  includePhone: boolean,
+): string {
+  const headers: string[] = ["Submission ID"];
+  if (includePhone) headers.push("Phone");
+  headers.push("Submitted At", "Updated At");
+  for (const q of questions) headers.push(q.label || "Untitled");
+
+  const rows: string[] = [headers.map(escapeCsvField).join(",")];
+
+  for (const resp of responses) {
+    const answerMap = new Map<string, string>();
+    for (const a of resp.answers) answerMap.set(a.questionId, a.value);
+
+    const cols: string[] = [resp.shortCode];
+    if (includePhone) cols.push(resp.phoneNumber || "");
+    cols.push(resp.createdAt, resp.updatedAt);
+
+    for (const q of questions) {
+      const raw = answerMap.get(q.id) || "";
+      cols.push(formatAnswerForCsv(raw, q.type));
+    }
+
+    rows.push(cols.map(escapeCsvField).join(","));
+  }
+
+  return rows.join("\n");
+}
+
+/** Format a stored answer value for human-readable CSV output. */
+function formatAnswerForCsv(value: string, questionType: string): string {
+  if (!value) return "";
+  if (questionType === "CHECKBOX") {
+    try {
+      const arr = JSON.parse(value);
+      return Array.isArray(arr) ? arr.join("; ") : value;
+    } catch {
+      return value;
+    }
+  }
+  if (questionType === "MULTIPLE_CHOICE_GRID" || questionType === "CHECKBOX_GRID") {
+    try {
+      const obj = JSON.parse(value);
+      if (typeof obj === "object" && obj !== null) {
+        return Object.entries(obj)
+          .map(([row, val]) => `${row}: ${val}`)
+          .join("; ");
+      }
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}

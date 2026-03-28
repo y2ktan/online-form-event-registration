@@ -33,6 +33,8 @@ model Form {
   phoneDescription String @default("We need to keep your phone number for future reference")
   phoneTitle       String @default("Phone Number")
   phonePlaceholder String @default("Enter your phone number")
+  theme        String   @default("{}") // JSON string for form theme customization
+  notifyEmails String   @default("") // Comma-separated emails to notify on submission
   authorId    String
   author      User       @relation(fields: [authorId], references: [id])
   createdAt   DateTime   @default(now())
