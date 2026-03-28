@@ -34,6 +34,8 @@ import {
   Search,
   Hash,
   Camera,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import {
   DndContext,
@@ -71,6 +73,8 @@ import {
   reorderQuestionWithinSection,
   updateRoutingOnOptionRename,
   removeRoutingForOption,
+  removeSectionWithQuestions,
+  FormHistory,
 } from "@/lib/form-helpers";
 
 interface OptionData {
@@ -859,6 +863,11 @@ export default function FormBuilderPage() {
   const [collabLoading, setCollabLoading] = useState(false);
   const [collabSearch, setCollabSearch] = useState("");
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const historyRef = useRef(new FormHistory<FormData>(50));
+  const undoRedoRef = useRef(false);
+  const historyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isAdmin = currentUserRole === "ADMIN";
 
@@ -962,13 +971,14 @@ export default function FormBuilderPage() {
     });
   }, [fetchForm]);
 
-  // Auto-save debounce
+  // Auto-save debounce (declared BEFORE history effect so it captures undoRedoRef first)
   useEffect(() => {
     if (!loadedRef.current || !form) return;
+    const silent = undoRedoRef.current;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      setSaveStatus("saving");
+      if (!silent) setSaveStatus("saving");
       try {
         const res = await fetch(`/api/forms/${formId}`, {
           method: "PUT",
@@ -1017,6 +1027,53 @@ export default function FormBuilderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);
 
+  // ─── Undo / Redo history tracking ──────────────────────────────────
+  function syncHistoryState() {
+    setCanUndo(historyRef.current.canUndo);
+    setCanRedo(historyRef.current.canRedo);
+  }
+
+  useEffect(() => {
+    if (!loadedRef.current || !form) return;
+    if (undoRedoRef.current) { undoRedoRef.current = false; return; }
+    if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current);
+    historyDebounceRef.current = setTimeout(() => {
+      historyRef.current.push(form);
+      syncHistoryState();
+    }, 500);
+    return () => { if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
+
+  function pushHistoryNow() {
+    if (!form) return;
+    if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current);
+    historyRef.current.push(form);
+    syncHistoryState();
+  }
+
+  function applySnapshot(snapshot: FormData | null) {
+    if (!snapshot) return;
+    if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current);
+    undoRedoRef.current = true;
+    setForm(snapshot);
+    syncHistoryState();
+  }
+
+  function undo() { applySnapshot(historyRef.current.undo()); }
+  function redo() { applySnapshot(historyRef.current.redo()); }
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if (mod && (e.key === "z" && e.shiftKey || e.key === "y")) { e.preventDefault(); redo(); }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
   const fetchResponses = useCallback(async () => {
     setResponsesLoading(true);
     const res = await fetch(`/api/responses?formId=${formId}`);
@@ -1034,6 +1091,7 @@ export default function FormBuilderPage() {
 
   function addQuestion(type: QuestionType, sectionIndex?: number) {
     if (!form) return;
+    pushHistoryNow();
     const si = sectionIndex ?? form.sections.length - 1;
     if (si < 0 || si >= form.sections.length) return;
     const section = form.sections[si];
@@ -1078,6 +1136,7 @@ export default function FormBuilderPage() {
       alert("The Phone Number field is required and cannot be removed.");
       return;
     }
+    pushHistoryNow();
     const newSections = [...form.sections];
     const questions = section.questions.filter((_, i) => i !== qIndex);
     questions.forEach((q, i) => (q.order = i));
@@ -1121,6 +1180,7 @@ export default function FormBuilderPage() {
 
   function removeOptionFromSection(sectionIndex: number, qIndex: number, oIndex: number) {
     if (!form) return;
+    pushHistoryNow();
     const newSections = [...form.sections];
     const section = { ...newSections[sectionIndex] };
     const questions = [...section.questions];
@@ -1139,6 +1199,7 @@ export default function FormBuilderPage() {
   // Section management functions
   function addSection() {
     if (!form) return;
+    pushHistoryNow();
     const newSection: SectionData = {
       id: tempId(),
       title: `Section ${form.sections.length + 1}`,
@@ -1163,13 +1224,14 @@ export default function FormBuilderPage() {
       alert("You must have at least one section.");
       return;
     }
-    const newSections = form.sections.filter((_, i) => i !== sectionIndex);
-    newSections.forEach((s, i) => (s.order = i));
-    setForm({ ...form, sections: newSections });
+    pushHistoryNow();
+    const result = removeSectionWithQuestions(form.sections, sectionIndex);
+    if (result) setForm({ ...form, sections: result });
   }
 
   function moveSectionUp(sectionIndex: number) {
     if (!form || sectionIndex <= 0) return;
+    pushHistoryNow();
     const newSections = [...form.sections];
     [newSections[sectionIndex], newSections[sectionIndex - 1]] = [newSections[sectionIndex - 1], newSections[sectionIndex]];
     newSections.forEach((s, i) => (s.order = i));
@@ -1178,6 +1240,7 @@ export default function FormBuilderPage() {
 
   function moveSectionDown(sectionIndex: number) {
     if (!form || sectionIndex >= form.sections.length - 1) return;
+    pushHistoryNow();
     const newSections = [...form.sections];
     [newSections[sectionIndex], newSections[sectionIndex + 1]] = [newSections[sectionIndex + 1], newSections[sectionIndex]];
     newSections.forEach((s, i) => (s.order = i));
@@ -1341,6 +1404,25 @@ export default function FormBuilderPage() {
                 </>
               )}
             </span>
+
+            <div className="flex items-center gap-1 border-r pr-2 mr-1">
+              <button
+                onClick={undo}
+                disabled={!canUndo}
+                className="rounded p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Undo (⌘Z)"
+              >
+                <Undo2 className="h-4 w-4" />
+              </button>
+              <button
+                onClick={redo}
+                disabled={!canRedo}
+                className="rounded p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Redo (⌘⇧Z)"
+              >
+                <Redo2 className="h-4 w-4" />
+              </button>
+            </div>
 
             <div className="flex items-center gap-2">
               <button

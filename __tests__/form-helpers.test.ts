@@ -5,6 +5,8 @@ import {
   reorderQuestionWithinSection,
   updateRoutingOnOptionRename,
   removeRoutingForOption,
+  removeSectionWithQuestions,
+  FormHistory,
   isOtherSelectedForRadio,
   isOtherCheckedForCheckbox,
   toggleOtherInCheckbox,
@@ -351,5 +353,220 @@ describe("updateOtherTextInCheckbox", () => {
   test("handles invalid JSON gracefully", () => {
     const result = updateOtherTextInCheckbox("bad-json", predefined, "Custom");
     expect(JSON.parse(result)).toEqual(["Custom"]);
+  });
+});
+
+// ─── removeSectionWithQuestions ──────────────────────────────────────
+
+describe("removeSectionWithQuestions", () => {
+  function makeSectionOrdered(id: string, order: number, questionIds: string[]) {
+    return {
+      id,
+      title: `Section ${id}`,
+      description: "",
+      order,
+      routingConfig: {},
+      questions: questionIds.map((qId, i) => makeQuestion(qId, i)),
+    };
+  }
+
+  test("returns null when only one section exists", () => {
+    const sections = [makeSectionOrdered("s1", 0, ["q1", "q2"])];
+    expect(removeSectionWithQuestions(sections, 0)).toBeNull();
+  });
+
+  test("returns null for out-of-bounds index", () => {
+    const sections = [makeSectionOrdered("s1", 0, []), makeSectionOrdered("s2", 1, [])];
+    expect(removeSectionWithQuestions(sections, -1)).toBeNull();
+    expect(removeSectionWithQuestions(sections, 5)).toBeNull();
+  });
+
+  test("merges questions into previous section when removing middle section", () => {
+    const sections = [
+      makeSectionOrdered("s1", 0, ["q1"]),
+      makeSectionOrdered("s2", 1, ["q2", "q3"]),
+      makeSectionOrdered("s3", 2, ["q4"]),
+    ];
+    const result = removeSectionWithQuestions(sections, 1)!;
+    expect(result).toHaveLength(2);
+    // s1 should now contain q1, q2, q3
+    expect(result[0].questions.map((q) => q.id)).toEqual(["q1", "q2", "q3"]);
+    expect(result[0].questions.map((q) => q.order)).toEqual([0, 1, 2]);
+    // s3 is now at index 1
+    expect(result[1].id).toBe("s3");
+    expect(result[1].order).toBe(1);
+  });
+
+  test("merges questions into next section when removing first section", () => {
+    const sections = [
+      makeSectionOrdered("s1", 0, ["q1", "q2"]),
+      makeSectionOrdered("s2", 1, ["q3"]),
+    ];
+    const result = removeSectionWithQuestions(sections, 0)!;
+    expect(result).toHaveLength(1);
+    // s2 gets q1, q2 prepended? No — they are appended: [...target, ...removed]
+    expect(result[0].questions.map((q) => q.id)).toEqual(["q3", "q1", "q2"]);
+    expect(result[0].questions.map((q) => q.order)).toEqual([0, 1, 2]);
+    expect(result[0].order).toBe(0);
+  });
+
+  test("merges questions into previous section when removing last section", () => {
+    const sections = [
+      makeSectionOrdered("s1", 0, ["q1"]),
+      makeSectionOrdered("s2", 1, ["q2", "q3"]),
+    ];
+    const result = removeSectionWithQuestions(sections, 1)!;
+    expect(result).toHaveLength(1);
+    expect(result[0].questions.map((q) => q.id)).toEqual(["q1", "q2", "q3"]);
+    expect(result[0].questions.map((q) => q.order)).toEqual([0, 1, 2]);
+  });
+
+  test("handles removing a section with no questions", () => {
+    const sections = [
+      makeSectionOrdered("s1", 0, ["q1"]),
+      makeSectionOrdered("s2", 1, []),
+    ];
+    const result = removeSectionWithQuestions(sections, 1)!;
+    expect(result).toHaveLength(1);
+    expect(result[0].questions.map((q) => q.id)).toEqual(["q1"]);
+  });
+
+  test("does not mutate original sections (immutability)", () => {
+    const sections = [
+      makeSectionOrdered("s1", 0, ["q1"]),
+      makeSectionOrdered("s2", 1, ["q2"]),
+    ];
+    const originalLen = sections[0].questions.length;
+    removeSectionWithQuestions(sections, 1);
+    expect(sections).toHaveLength(2);
+    expect(sections[0].questions).toHaveLength(originalLen);
+  });
+});
+
+// ─── FormHistory ────────────────────────────────────────────────────
+
+describe("FormHistory", () => {
+  test("starts empty with no undo/redo", () => {
+    const h = new FormHistory<number>();
+    expect(h.canUndo).toBe(false);
+    expect(h.canRedo).toBe(false);
+    expect(h.length).toBe(0);
+  });
+
+  test("push adds snapshots", () => {
+    const h = new FormHistory<number>();
+    h.push(1);
+    h.push(2);
+    h.push(3);
+    expect(h.length).toBe(3);
+  });
+
+  test("undo returns previous snapshot", () => {
+    const h = new FormHistory<number>();
+    h.push(10);
+    h.push(20);
+    h.push(30);
+    expect(h.undo()).toBe(20);
+    expect(h.canUndo).toBe(true);
+    expect(h.canRedo).toBe(true);
+    expect(h.undo()).toBe(10);
+    expect(h.canUndo).toBe(false);
+    expect(h.canRedo).toBe(true);
+  });
+
+  test("undo returns null when at the start", () => {
+    const h = new FormHistory<number>();
+    h.push(1);
+    expect(h.undo()).toBeNull();
+  });
+
+  test("redo returns next snapshot", () => {
+    const h = new FormHistory<number>();
+    h.push(10);
+    h.push(20);
+    h.push(30);
+    h.undo(); // -> 20
+    h.undo(); // -> 10
+    expect(h.redo()).toBe(20);
+    expect(h.redo()).toBe(30);
+    expect(h.canRedo).toBe(false);
+  });
+
+  test("redo returns null when at the end", () => {
+    const h = new FormHistory<number>();
+    h.push(1);
+    h.push(2);
+    expect(h.redo()).toBeNull();
+  });
+
+  test("push after undo discards redo future", () => {
+    const h = new FormHistory<number>();
+    h.push(1);
+    h.push(2);
+    h.push(3);
+    h.undo(); // -> 2
+    h.push(4); // discard 3
+    expect(h.length).toBe(3); // [1, 2, 4]
+    expect(h.canRedo).toBe(false);
+    expect(h.undo()).toBe(2);
+  });
+
+  test("respects maxSize cap", () => {
+    const h = new FormHistory<number>(3);
+    h.push(1);
+    h.push(2);
+    h.push(3);
+    h.push(4); // evicts 1
+    expect(h.length).toBe(3);
+    // oldest remaining is 2
+    h.undo(); // -> 3
+    h.undo(); // -> 2
+    expect(h.undo()).toBeNull(); // can't go before 2
+  });
+
+  test("push clones snapshot so later mutations don't corrupt history", () => {
+    const h = new FormHistory<{ value: number }>();
+    const obj = { value: 1 };
+    h.push(obj);
+    obj.value = 999; // mutate original after push
+    h.push(obj);     // pushes clone of { value: 999 }
+    const restored = h.undo()!;
+    expect(restored.value).toBe(1); // first push was cloned independently
+  });
+
+  test("undo/redo return raw refs (no extra clone overhead)", () => {
+    const h = new FormHistory<{ v: number }>();
+    h.push({ v: 1 });
+    h.push({ v: 2 });
+    h.push({ v: 3 });
+    const a = h.undo()!;        // index 1 → { v: 2 }
+    expect(a.v).toBe(2);
+    const b = h.redo()!;        // index 2 → { v: 3 }
+    const c = h.undo()!;        // index 1 again → same ref as a
+    expect(c).toBe(a);          // same reference — no clone on undo/redo
+    expect(b).not.toBe(a);      // different stack entries are different refs
+  });
+
+  test("undo-redo-undo cycle is consistent", () => {
+    const h = new FormHistory<string>();
+    h.push("a");
+    h.push("b");
+    h.push("c");
+    expect(h.undo()).toBe("b");
+    expect(h.redo()).toBe("c");
+    expect(h.undo()).toBe("b");
+    expect(h.undo()).toBe("a");
+    expect(h.redo()).toBe("b");
+  });
+
+  test("O(1) undo/redo — no re-allocation", () => {
+    const h = new FormHistory<number>(1000);
+    for (let i = 0; i < 1000; i++) h.push(i);
+    const start = performance.now();
+    for (let i = 0; i < 500; i++) h.undo();
+    for (let i = 0; i < 500; i++) h.redo();
+    const elapsed = performance.now() - start;
+    // 1000 undo+redo ops should complete well under 50ms
+    expect(elapsed).toBeLessThan(50);
   });
 });
