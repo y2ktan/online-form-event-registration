@@ -1574,10 +1574,10 @@ export default function FormBuilderPage() {
         </div>
       </header>
 
-      {/* Theme Editor Panel */}
+      {/* Theme Editor Dialog */}
       {showThemeEditor && (
-        <div className="mx-auto w-full max-w-4xl px-3 pt-3 sm:px-4 sm:pt-4">
-          <div className="rounded-xl border bg-white p-4 shadow-sm sm:p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowThemeEditor(false)}>
+          <div className="relative w-full max-w-lg rounded-xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Theme Customization</h3>
               <button onClick={() => setShowThemeEditor(false)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
