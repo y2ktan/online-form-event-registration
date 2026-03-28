@@ -7,7 +7,7 @@
 export interface FormTheme {
   primaryColor: string;
   backgroundColor: string;
-  fontFamily: "sans" | "serif" | "mono";
+  fontFamily: string;
   borderRadius: "sm" | "md" | "lg";
   headerImage: string;
 }
@@ -54,7 +54,7 @@ export function parseTheme(raw: string | null | undefined): FormTheme {
     return {
       primaryColor: HEX_COLOR_RE.test(parsed.primaryColor) ? parsed.primaryColor : DEFAULT_THEME.primaryColor,
       backgroundColor: HEX_COLOR_RE.test(parsed.backgroundColor) ? parsed.backgroundColor : DEFAULT_THEME.backgroundColor,
-      fontFamily: FONT_FAMILIES.has(parsed.fontFamily) ? parsed.fontFamily : DEFAULT_THEME.fontFamily,
+      fontFamily: typeof parsed.fontFamily === "string" && parsed.fontFamily.trim() ? parsed.fontFamily : DEFAULT_THEME.fontFamily,
       borderRadius: BORDER_RADII.has(parsed.borderRadius) ? parsed.borderRadius : DEFAULT_THEME.borderRadius,
       headerImage: typeof parsed.headerImage === "string" && isValidHeaderImage(parsed.headerImage) ? parsed.headerImage : DEFAULT_THEME.headerImage,
     };
@@ -80,12 +80,17 @@ const RADIUS_MAP: Record<string, string> = {
   lg: "0.75rem",
 };
 
+/** Built-in font family keys. */
+export const BUILT_IN_FONTS = new Set(["sans", "serif", "mono"]);
+
 /** Convert a FormTheme into CSS custom property key-value pairs. */
 export function themeToCssVars(theme: FormTheme): Record<string, string> {
+  const fontStack = FONT_STACKS[theme.fontFamily]
+    || `"${theme.fontFamily}", ${FONT_STACKS.sans}`;
   return {
     "--theme-primary": theme.primaryColor,
     "--theme-bg": theme.backgroundColor,
-    "--theme-font": FONT_STACKS[theme.fontFamily] || FONT_STACKS.sans,
+    "--theme-font": fontStack,
     "--theme-radius": RADIUS_MAP[theme.borderRadius] || RADIUS_MAP.md,
   };
 }

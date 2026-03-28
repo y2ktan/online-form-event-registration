@@ -24,7 +24,7 @@ import {
   toggleOtherInCheckbox,
   updateOtherTextInCheckbox,
 } from "@/lib/form-helpers";
-import { parseTheme, themeToCssVars, primaryTint, type FormTheme } from "@/lib/theme";
+import { parseTheme, themeToCssVars, primaryTint, BUILT_IN_FONTS, type FormTheme } from "@/lib/theme";
 import { sanitizeRichText, isRichTextEmpty } from "@/lib/rich-text";
 
 interface OptionData {
@@ -110,6 +110,7 @@ export default function PublicFormPage() {
   const [showPhoneDialog, setShowPhoneDialog] = useState(false);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [sectionHistory, setSectionHistory] = useState<number[]>([]);
+  const [customFontCss, setCustomFontCss] = useState("");
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -139,7 +140,21 @@ export default function PublicFormPage() {
           questions,
         });
       }
-      setForm({ ...data, theme: parseTheme(data.theme), sections });
+      const theme = parseTheme(data.theme);
+      setForm({ ...data, theme, sections });
+      // Load custom font @font-face if needed
+      if (theme.fontFamily && !BUILT_IN_FONTS.has(theme.fontFamily)) {
+        try {
+          const fRes = await fetch("/api/admin/fonts");
+          if (fRes.ok) {
+            const fonts: { name: string; filename: string }[] = await fRes.json();
+            const match = fonts.find((f) => f.name === theme.fontFamily);
+            if (match) {
+              setCustomFontCss(`@font-face { font-family: "${match.name}"; src: url("/fonts/${match.filename}") format("truetype"); font-display: swap; }`);
+            }
+          }
+        } catch { /* ignore */ }
+      }
     } else {
       setNotFound(true);
     }
@@ -591,6 +606,7 @@ export default function PublicFormPage() {
 
   return (
     <div className="min-h-screen py-4 sm:py-8" style={{ ...themeVars, backgroundColor: themeVars["--theme-bg"], fontFamily: themeVars["--theme-font"] } as React.CSSProperties}>
+      {customFontCss && <style dangerouslySetInnerHTML={{ __html: customFontCss }} />}
       <div className="mx-auto w-full max-w-2xl px-3 sm:px-4">
         {/* Header image banner */}
         {form.theme.headerImage && (

@@ -68,10 +68,14 @@ describe("parseTheme", () => {
     const partial = JSON.stringify({
       primaryColor: "not-hex",
       backgroundColor: "#fff",       // 3-char hex — invalid
-      fontFamily: "comic-sans",      // not in allowed set
+      fontFamily: "comic-sans",      // now valid as custom font name
       borderRadius: "xl",            // not in allowed set
     });
-    expect(parseTheme(partial)).toEqual(DEFAULT_THEME);
+    const result = parseTheme(partial);
+    expect(result.primaryColor).toBe(DEFAULT_THEME.primaryColor);
+    expect(result.backgroundColor).toBe(DEFAULT_THEME.backgroundColor);
+    expect(result.fontFamily).toBe("comic-sans");
+    expect(result.borderRadius).toBe(DEFAULT_THEME.borderRadius);
   });
 
   test("mixes valid and invalid fields correctly", () => {
@@ -145,6 +149,12 @@ describe("themeToCssVars", () => {
   test("maps mono font family correctly", () => {
     const vars = themeToCssVars({ ...DEFAULT_THEME, fontFamily: "mono" });
     expect(vars["--theme-font"]).toContain("monospace");
+  });
+
+  test("maps custom font family with sans-serif fallback", () => {
+    const vars = themeToCssVars({ ...DEFAULT_THEME, fontFamily: "My Custom Font" });
+    expect(vars["--theme-font"]).toContain('"My Custom Font"');
+    expect(vars["--theme-font"]).toContain("sans-serif");
   });
 
   test("maps sm border radius correctly", () => {

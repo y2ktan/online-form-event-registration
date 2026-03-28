@@ -62,8 +62,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Create data and uploads directory with correct permissions
-RUN mkdir -p /app/data /app/public/uploads && chown -R nextjs:nodejs /app/data /app/public/uploads
+# Create data, uploads, and fonts directories with correct permissions
+RUN mkdir -p /app/data /app/public/uploads /app/public/fonts && chown -R nextjs:nodejs /app/data /app/public/uploads /app/public/fonts
 
 USER nextjs
 
@@ -86,8 +86,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 
-# Create data and uploads directory matching the runner volume mount
-RUN mkdir -p /app/data /app/public/uploads && chown -R nextjs:nodejs /app/data /app/public/uploads
+# Create data, uploads, and fonts directories matching the runner volume mount
+RUN mkdir -p /app/data /app/public/uploads /app/public/fonts && chown -R nextjs:nodejs /app/data /app/public/uploads /app/public/fonts
 
 USER nextjs
 

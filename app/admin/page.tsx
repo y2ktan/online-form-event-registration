@@ -19,6 +19,7 @@ import {
   Camera,
   Copy,
   Loader2,
+  Type,
 } from "lucide-react";
 
 interface CurrentUser {
@@ -251,6 +252,13 @@ export default function AdminDashboard() {
                         >
                           <Settings className="h-4 w-4" />
                           SMTP Settings
+                        </button>
+                        <button
+                          onClick={() => { router.push("/admin/settings/fonts"); setShowProfileMenu(false); }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <Type className="h-4 w-4" />
+                          Font Settings
                         </button>
                       </>
                     )}

@@ -78,7 +78,7 @@ import {
   removeSectionWithQuestions,
   FormHistory,
 } from "@/lib/form-helpers";
-import { type FormTheme, DEFAULT_THEME, parseTheme, serializeTheme, COLOR_PRESETS, BG_PRESETS, HEADER_IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/theme";
+import { type FormTheme, DEFAULT_THEME, parseTheme, serializeTheme, COLOR_PRESETS, BG_PRESETS, HEADER_IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES, BUILT_IN_FONTS } from "@/lib/theme";
 import GoogleFormEditor from "@/components/GoogleFormEditor";
 import { sanitizeRichText, isRichTextEmpty } from "@/lib/rich-text";
 
@@ -919,6 +919,7 @@ export default function FormBuilderPage() {
   const [collabSearch, setCollabSearch] = useState("");
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
+  const [customFonts, setCustomFonts] = useState<{ id: string; name: string; filename: string }[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const historyRef = useRef(new FormHistory<FormData>(50));
@@ -947,6 +948,7 @@ export default function FormBuilderPage() {
     fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(u => {
       if (u) setCurrentUserRole(u.role);
     });
+    fetch("/api/admin/fonts").then(r => r.ok ? r.json() : []).then(setCustomFonts).catch(() => {});
   }, []);
 
   const loadedRef = useRef(false);
@@ -1616,7 +1618,7 @@ export default function FormBuilderPage() {
               {/* Font Family */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1.5">Font</label>
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap gap-1.5">
                   {(["sans", "serif", "mono"] as const).map((f) => (
                     <button
                       key={f}
@@ -1625,6 +1627,15 @@ export default function FormBuilderPage() {
                       style={{ fontFamily: f === "sans" ? "sans-serif" : f === "serif" ? "serif" : "monospace" }}
                     >
                       {f}
+                    </button>
+                  ))}
+                  {customFonts.map((cf) => (
+                    <button
+                      key={cf.id}
+                      onClick={() => setForm({ ...form, theme: { ...form.theme, fontFamily: cf.name } })}
+                      className={`rounded-lg border px-3 py-1 text-xs ${form.theme.fontFamily === cf.name ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                    >
+                      {cf.name}
                     </button>
                   ))}
                 </div>
