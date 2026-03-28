@@ -25,6 +25,7 @@ import {
   updateOtherTextInCheckbox,
 } from "@/lib/form-helpers";
 import { parseTheme, themeToCssVars, primaryTint, type FormTheme } from "@/lib/theme";
+import { sanitizeRichText, isRichTextEmpty } from "@/lib/rich-text";
 
 interface OptionData {
   id: string;
@@ -600,8 +601,8 @@ export default function PublicFormPage() {
         {/* Form header */}
         <div className={`mb-4 bg-white p-4 shadow-sm sm:mb-6 sm:p-6 ${form.theme.headerImage ? "" : "border-t-4"}`} style={{ borderTopColor: form.theme.headerImage ? undefined : pc, borderRadius: form.theme.headerImage ? `0 0 ${themeVars["--theme-radius"]} ${themeVars["--theme-radius"]}` : themeVars["--theme-radius"] }}>
           <h1 className="text-2xl font-bold text-gray-900">{form.title}</h1>
-          {form.description && (
-            <p className="mt-2 text-gray-600">{form.description}</p>
+          {form.description && !isRichTextEmpty(form.description) && (
+            <div className="mt-2 text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(form.description) }} />
           )}
           <p className="mt-3 text-sm text-red-500">* Required</p>
           {isMultiSection && (
@@ -625,8 +626,8 @@ export default function PublicFormPage() {
             {currentSection.title && (
               <h2 className="text-lg font-semibold text-gray-900">{currentSection.title}</h2>
             )}
-            {currentSection.description && (
-              <p className="mt-1 text-sm text-gray-600">{currentSection.description}</p>
+            {currentSection.description && !isRichTextEmpty(currentSection.description) && (
+              <div className="mt-1 text-sm text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(currentSection.description) }} />
             )}
           </div>
         )}
@@ -639,7 +640,19 @@ export default function PublicFormPage() {
           )}
 
           {/* Dynamic questions for current section */}
-          {nonPhoneQuestions.map((question) => (
+          {nonPhoneQuestions.map((question) => {
+            const qConfig = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+            if (qConfig?.isTitle) {
+              return (
+                <div key={question.id} className="bg-white p-4 shadow-sm sm:p-6" style={{ borderRadius: themeVars["--theme-radius"] }}>
+                  <h3 className="text-base font-medium text-gray-900">{question.label}</h3>
+                  {qConfig.titleDescription && !isRichTextEmpty(qConfig.titleDescription) && (
+                    <div className="mt-1 text-sm text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(qConfig.titleDescription) }} />
+                  )}
+                </div>
+              );
+            }
+            return (
             <div key={question.id} className="bg-white p-4 shadow-sm sm:p-6" style={{ borderRadius: themeVars["--theme-radius"] }}>
               <label className="block text-base font-medium text-gray-900">
                 {question.label}
@@ -1001,7 +1014,8 @@ export default function PublicFormPage() {
                 </p>
               )}
             </div>
-          ))}
+            );
+          })}
 
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">

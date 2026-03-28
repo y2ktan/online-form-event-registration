@@ -79,6 +79,8 @@ import {
   FormHistory,
 } from "@/lib/form-helpers";
 import { type FormTheme, DEFAULT_THEME, parseTheme, serializeTheme, COLOR_PRESETS, BG_PRESETS, HEADER_IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/theme";
+import GoogleFormEditor from "@/components/GoogleFormEditor";
+import { sanitizeRichText, isRichTextEmpty } from "@/lib/rich-text";
 
 interface OptionData {
   id: string;
@@ -225,6 +227,54 @@ function SortableQuestion({
     zIndex: isDragging ? 10 : 1,
     position: "relative" as const,
   };
+
+  const isTitle = Boolean(question.config && typeof question.config === "object" && (question.config as any).isTitle);
+
+  // Google Forms-style Title & Description card
+  if (isTitle) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`rounded-lg border bg-white p-3 shadow-sm sm:rounded-xl sm:p-5 ${
+          isDragging ? "shadow-lg ring-2 ring-indigo-500 ring-opacity-50" : ""
+        }`}
+      >
+        <div className="flex items-start gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            className="mt-1 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 touch-none cursor-grab active:cursor-grabbing"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <div className="flex-1">
+            <input
+              type="text"
+              value={question.label}
+              onChange={(e) => updateQuestion(sectionIndex, qIndex, { label: e.target.value })}
+              className="w-full border-b-2 border-transparent text-base font-medium text-gray-900 focus:border-[#2e7d32] focus:outline-none"
+              placeholder="Untitled Title"
+            />
+            <div className="mt-2">
+              <GoogleFormEditor
+                value={(question.config as any).titleDescription || ""}
+                onChange={(html) => updateQuestion(sectionIndex, qIndex, { config: { ...(question.config as any), titleDescription: html } })}
+                placeholder="Description (optional)"
+              />
+            </div>
+          </div>
+          <button
+            onClick={() => removeQuestion(sectionIndex, qIndex)}
+            className="mt-1 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+            title="Delete"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1670,15 +1720,13 @@ export default function FormBuilderPage() {
             className="w-full border-b border-transparent text-2xl font-bold text-gray-900 focus:border-indigo-500 focus:outline-none"
             placeholder="Form title"
           />
-          <input
-            type="text"
-            value={form.description}
-            onChange={(e) =>
-              setForm({ ...form, description: e.target.value })
-            }
-            className="mt-2 w-full border-b border-transparent text-sm text-gray-500 focus:border-indigo-500 focus:outline-none"
-            placeholder="Form description"
-          />
+          <div className="mt-2">
+            <GoogleFormEditor
+              value={form.description}
+              onChange={(html) => setForm({ ...form, description: html })}
+              placeholder="Form description (optional)"
+            />
+          </div>
         </div>
 
         {/* Questions */}
@@ -1793,13 +1841,13 @@ export default function FormBuilderPage() {
                             className="w-full border-b border-transparent bg-transparent text-lg font-semibold text-indigo-900 focus:border-indigo-500 focus:outline-none"
                             placeholder="Section title"
                           />
-                          <input
-                            type="text"
-                            value={section.description}
-                            onChange={(e) => updateSection(sIndex, { description: e.target.value })}
-                            className="mt-1 w-full border-b border-transparent bg-transparent text-sm text-indigo-700 focus:border-indigo-500 focus:outline-none"
-                            placeholder="Section description (optional)"
-                          />
+                          <div className="mt-1">
+                            <GoogleFormEditor
+                              value={section.description}
+                              onChange={(html) => updateSection(sIndex, { description: html })}
+                              placeholder="Section description (optional)"
+                            />
+                          </div>
                         </div>
                         <div className="flex items-center gap-1">
                           <button onClick={() => moveSectionUp(sIndex)} disabled={sIndex === 0} className="rounded p-1 text-indigo-400 hover:bg-indigo-100 disabled:opacity-30" title="Move up"><ChevronUp className="h-4 w-4" /></button>
@@ -1929,7 +1977,7 @@ export default function FormBuilderPage() {
               <Import className="h-4 w-4" />
             </button>
 
-            {/* Add Title */}
+            {/* Add Title & Description */}
             <button
               onClick={() => {
                 if (!form) return;
@@ -1938,17 +1986,17 @@ export default function FormBuilderPage() {
                 const newQ: QuestionData = {
                   id: tempId(),
                   type: "SHORT_TEXT" as QuestionType,
-                  label: "Section Title",
+                  label: "Untitled Title",
                   isRequired: false,
                   order: lastSection.questions.length,
                   options: [],
-                  config: { isTitle: true },
+                  config: { isTitle: true, titleDescription: "" },
                 };
                 const newSections = [...form.sections];
                 newSections[lastSi] = { ...lastSection, questions: [...lastSection.questions, newQ] };
                 setForm({ ...form, sections: newSections });
               }}
-              className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Add Title"
+              className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Add Title & Description"
             >
               <Heading className="h-4 w-4" />
             </button>
@@ -2251,8 +2299,8 @@ export default function FormBuilderPage() {
                 <h2 className="text-2xl font-bold text-gray-900">
                   {form.title}
                 </h2>
-                {form.description && (
-                  <p className="mt-2 text-gray-600">{form.description}</p>
+                {form.description && !isRichTextEmpty(form.description) && (
+                  <div className="mt-2 text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(form.description) }} />
                 )}
                 <p className="mt-3 text-sm text-red-500">* Required</p>
               </div>
@@ -2262,6 +2310,17 @@ export default function FormBuilderPage() {
                 {form.sections.flatMap(s => s.questions).map((question) => {
                   const config = question.config;
                   const isPhone = Boolean(config?.isPhoneNumber);
+                  if (config?.isTitle) {
+                    const desc = (config.titleDescription as string) || "";
+                    return (
+                      <div key={question.id} className="rounded-xl bg-white p-6 shadow-sm border">
+                        <h3 className="text-base font-medium text-gray-900">{question.label || "(Untitled)"}</h3>
+                        {desc && !isRichTextEmpty(desc) && (
+                          <div className="mt-1 text-sm text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(desc) }} />
+                        )}
+                      </div>
+                    );
+                  }
                   return (
                     <div
                       key={question.id}
