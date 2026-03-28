@@ -37,15 +37,29 @@ model Form {
   author      User       @relation(fields: [authorId], references: [id])
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
-  questions   Question[]
+  sections       Section[]
+  questions      Question[]
   responses      Response[]
   collaborators  FormCollaborator[]
+}
+
+model Section {
+  id            String   @id @default(uuid())
+  formId        String
+  form          Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  title         String   @default("Untitled Section")
+  description   String   @default("")
+  order         Int      @default(0)
+  routingConfig String   @default("{}") // JSON: { defaultRoute: "NEXT" | "SUBMIT" | sectionId }
+  questions     Question[]
 }
 
 model Question {
   id         String   @id @default(uuid())
   formId     String
   form       Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  sectionId  String?
+  section    Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   type       String   // SHORT_TEXT, PARAGRAPH, MULTIPLE_CHOICE, CHECKBOX, DROPDOWN, FILE_UPLOAD, LINEAR_SCALE, RATING, MULTIPLE_CHOICE_GRID, CHECKBOX_GRID, DATE, TIME
   label      String
   isRequired Boolean  @default(false)
@@ -55,7 +69,7 @@ model Question {
 
   // For LINEAR_SCALE: min/max labels stored as config JSON
   // For GRID types: row/column labels stored in options with a "group" field
-  config     String   @default("{}") // JSON string for extra config
+  config     String   @default("{}") // JSON string for extra config. Routing rules stored here as "routing" key.
 }
 
 model Option {

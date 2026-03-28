@@ -2,6 +2,7 @@ import { expect, test, describe, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { prismaMock } from "../singleton";
 import * as auth from "../../lib/auth";
+const canEditForm = auth.canEditForm as unknown as ReturnType<typeof vi.fn>;
 
 // Mock rate limit
 vi.mock("../../lib/rate-limit", () => ({
@@ -10,6 +11,7 @@ vi.mock("../../lib/rate-limit", () => ({
 
 vi.mock("../../lib/auth", () => ({
   getSession: vi.fn(),
+  canEditForm: vi.fn(),
 }));
 
 // Mock Next.js headers/cookies
@@ -37,6 +39,7 @@ const mockForm = {
   createdAt: new Date(),
   updatedAt: new Date(),
   questions: [],
+  sections: [],
 } as unknown;
 
 describe("Forms API CRUD", () => {
@@ -69,6 +72,12 @@ describe("Forms API CRUD", () => {
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prismaMock.form.create.mockResolvedValue(mockForm as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (prismaMock.section as any).create.mockResolvedValue({ id: "sec-1", formId: "form-1", title: "Section 1", order: 0 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prismaMock.question.create.mockResolvedValue({ id: "q1", formId: "form-1", sectionId: "sec-1", type: "SHORT_TEXT", label: "Phone Number", isRequired: true, order: 0, config: "{}" } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prismaMock.form.findUnique.mockResolvedValue(mockForm as any);
 
     const req = new NextRequest("http://localhost:3000/api/forms", {
       method: "POST",
@@ -81,8 +90,9 @@ describe("Forms API CRUD", () => {
   });
 
   test("GET /api/forms/[id] returns a form", async () => {
+    const publishedForm = { ...(mockForm as object), published: true };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prismaMock.form.findUnique.mockResolvedValue(mockForm as any);
+    prismaMock.form.findUnique.mockResolvedValue(publishedForm as any);
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
 
     const req = new NextRequest("http://localhost:3000/api/forms/form-1");
@@ -92,6 +102,7 @@ describe("Forms API CRUD", () => {
 
   test("PUT /api/forms/[id] updates a form", async () => {
     vi.mocked(auth.getSession).mockResolvedValue(mockAdminSession);
+    canEditForm.mockResolvedValue(true);
     const updatedForm = { ...(mockForm as object), title: "Updated" };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prismaMock.form.update.mockResolvedValue(updatedForm as any);

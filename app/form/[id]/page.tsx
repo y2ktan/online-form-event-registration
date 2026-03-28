@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { isGridType } from "@/lib/question-types";
 import { QRCodeSVG } from "qrcode.react";
+import { resolveNextSection } from "@/lib/routing";
+import type { RoutingConfig } from "@/lib/routing";
 
 interface OptionData {
   id: string;
@@ -40,6 +42,7 @@ interface QuestionConfig {
   isPhoneNumber?: boolean;
   validationEnabled?: boolean;
   validation?: ValidationConfig;
+  routing?: RoutingConfig;
   grid?: {
     rows: GridItem[];
     columns: GridItem[];
@@ -57,6 +60,15 @@ interface QuestionData {
   config: QuestionConfig | string;
 }
 
+interface SectionData {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  routingConfig: string | { defaultRoute?: string };
+  questions: QuestionData[];
+}
+
 interface FormData {
   id: string;
   title: string;
@@ -66,6 +78,7 @@ interface FormData {
   phoneDescription: string;
   phoneTitle: string;
   phonePlaceholder: string;
+  sections: SectionData[];
   questions: QuestionData[];
 }
 
@@ -84,11 +97,38 @@ export default function PublicFormPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [showPhoneDialog, setShowPhoneDialog] = useState(false);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
+  const [sectionHistory, setSectionHistory] = useState<number[]>([]);
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
     if (res.ok) {
-      setForm(await res.json());
+      const data = await res.json();
+      // Parse sections from API response
+      const sections: SectionData[] = (data.sections || []).map((s: any) => ({
+        ...s,
+        routingConfig: typeof s.routingConfig === "string" ? JSON.parse(s.routingConfig || "{}") : (s.routingConfig || {}),
+        questions: (s.questions || []).map((q: any) => ({
+          ...q,
+          config: typeof q.config === "string" ? JSON.parse(q.config) : q.config,
+        })),
+      }));
+      // Fallback: if no sections, create one from flat questions
+      if (sections.length === 0) {
+        const questions = (data.questions || []).map((q: any) => ({
+          ...q,
+          config: typeof q.config === "string" ? JSON.parse(q.config) : q.config,
+        }));
+        sections.push({
+          id: "default",
+          title: "Section 1",
+          description: "",
+          order: 0,
+          routingConfig: {},
+          questions,
+        });
+      }
+      setForm({ ...data, sections });
     } else {
       setNotFound(true);
     }
@@ -270,22 +310,21 @@ export default function PublicFormPage() {
     return null;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form) return;
+  function validateCurrentSection(): boolean {
+    if (!form) return false;
+    const section = form.sections[currentSectionIndex];
+    if (!section) return false;
 
     setError("");
     setFieldErrors({});
 
-    // Client-side validation (skip phone number question — handled via modal dialog)
     const errors: Record<string, string> = {};
-    for (const q of form.questions) {
+    for (const q of section.questions) {
       const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
       if (config?.isPhoneNumber) continue;
       
       const val = answers[q.id] || "";
       
-      // Check required field
       if (q.isRequired) {
         if (isGridType(q.type as any)) {
           try {
@@ -317,7 +356,6 @@ export default function PublicFormPage() {
         }
       }
       
-      // Check validation rules (only if answer is provided and not a grid)
       if (val && val.trim() && val !== "[]" && !isGridType(q.type as any)) {
         const validationError = validateAnswer(q, val);
         if (validationError) {
@@ -328,17 +366,81 @@ export default function PublicFormPage() {
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      return;
+      return false;
     }
+    return true;
+  }
 
+  function handleNext() {
+    if (!form) return;
+    if (!validateCurrentSection()) return;
+
+    const section = form.sections[currentSectionIndex];
+    const sectionQuestions = section.questions.map((q) => ({
+      id: q.id,
+      type: q.type,
+      config: typeof q.config === "string" ? q.config : JSON.stringify(q.config),
+    }));
+
+    const result = resolveNextSection(
+      form.sections.map((s) => ({
+        id: s.id,
+        order: s.order,
+        routingConfig: typeof s.routingConfig === "string" ? s.routingConfig : JSON.stringify(s.routingConfig),
+      })),
+      currentSectionIndex,
+      sectionQuestions,
+      answers
+    );
+
+    if (result.type === "SUBMIT") {
+      // Trigger submission
+      handleFinalSubmit();
+    } else {
+      const nextIdx = result.sectionIndex ?? currentSectionIndex + 1;
+      setSectionHistory((prev) => [...prev, currentSectionIndex]);
+      setCurrentSectionIndex(nextIdx);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  function handleBack() {
+    if (sectionHistory.length > 0) {
+      const prevIdx = sectionHistory[sectionHistory.length - 1];
+      setSectionHistory((prev) => prev.slice(0, -1));
+      setCurrentSectionIndex(prevIdx);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  async function handleFinalSubmit() {
+    if (!form) return;
+    
     // If phone is required but not yet provided, show the dialog
     if (form.collectPhone && !phoneNumber.trim()) {
       setShowPhoneDialog(true);
       return;
     }
 
-    // Otherwise submit directly
     await submitForm();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form) return;
+
+    const isLastSection = currentSectionIndex >= form.sections.length - 1;
+    const section = form.sections[currentSectionIndex];
+
+    // For single-section forms or last section with no routing, validate and submit directly
+    if (form.sections.length === 1) {
+      if (!validateCurrentSection()) return;
+      await handleFinalSubmit();
+      return;
+    }
+
+    // For multi-section, use handleNext which handles routing
+    handleNext();
   }
 
   async function submitForm() {
@@ -462,10 +564,16 @@ export default function PublicFormPage() {
 
   if (!form) return null;
 
-  const nonPhoneQuestions = form.questions.filter((q) => {
-    const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
-    return !config?.isPhoneNumber;
-  });
+  const currentSection = form.sections[currentSectionIndex];
+  const isMultiSection = form.sections.length > 1;
+  const isFirstSection = currentSectionIndex === 0;
+
+  const nonPhoneQuestions = currentSection
+    ? currentSection.questions.filter((q) => {
+        const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+        return !config?.isPhoneNumber;
+      })
+    : [];
 
   return (
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
@@ -477,7 +585,32 @@ export default function PublicFormPage() {
             <p className="mt-2 text-gray-600">{form.description}</p>
           )}
           <p className="mt-3 text-sm text-red-500">* Required</p>
+          {isMultiSection && (
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+                <div
+                  className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${((currentSectionIndex + 1) / form.sections.length) * 100}%` }}
+                />
+              </div>
+              <span className="text-xs text-gray-500 whitespace-nowrap">
+                {currentSectionIndex + 1} / {form.sections.length}
+              </span>
+            </div>
+          )}
         </div>
+
+        {/* Section header (only show if multi-section and section has a title) */}
+        {isMultiSection && currentSection && (currentSection.title || currentSection.description) && (
+          <div className="mb-4 rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6 border-l-4 border-l-indigo-400">
+            {currentSection.title && (
+              <h2 className="text-lg font-semibold text-gray-900">{currentSection.title}</h2>
+            )}
+            {currentSection.description && (
+              <p className="mt-1 text-sm text-gray-600">{currentSection.description}</p>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -486,7 +619,7 @@ export default function PublicFormPage() {
             </div>
           )}
 
-          {/* Dynamic questions */}
+          {/* Dynamic questions for current section */}
           {nonPhoneQuestions.map((question) => (
             <div key={question.id} className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
               <label className="block text-base font-medium text-gray-900">
@@ -783,20 +916,43 @@ export default function PublicFormPage() {
             </div>
           ))}
 
-          <div className="flex justify-between">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
-            >
-              {submitting ? "Submitting..." : "Submit"}
-            </button>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              {isMultiSection && !isFirstSection && (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Back
+                </button>
+              )}
+              {isMultiSection ? (
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {submitting ? "Submitting..." : "Next"}
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {submitting ? "Submitting..." : "Submit"}
+                </button>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => {
                 setAnswers({});
                 setPhoneNumber("");
                 setFieldErrors({});
+                setCurrentSectionIndex(0);
+                setSectionHistory([]);
               }}
               className="text-sm text-gray-500 hover:text-gray-700"
             >

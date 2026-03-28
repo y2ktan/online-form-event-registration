@@ -12,6 +12,7 @@ import {
   Type,
   List,
   ChevronDown,
+  ChevronUp,
   Star,
   Calendar,
   Clock,
@@ -36,12 +37,16 @@ import {
 } from "lucide-react";
 import {
   DndContext,
-  closestCenter,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   DragEndEvent,
+  DragStartEvent,
+  DragOverEvent,
+  DragOverlay,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -59,6 +64,14 @@ import {
   isGridType,
   type QuestionType,
 } from "@/lib/question-types";
+import { type RoutingConfig, type OptionMatchRouting } from "@/lib/routing";
+import {
+  findSectionForQuestion,
+  moveQuestionBetweenSections,
+  reorderQuestionWithinSection,
+  updateRoutingOnOptionRename,
+  removeRoutingForOption,
+} from "@/lib/form-helpers";
 
 interface OptionData {
   id: string;
@@ -83,6 +96,7 @@ interface ValidationConfig {
 interface QuestionConfig {
   validationEnabled?: boolean;
   validation?: ValidationConfig;
+  routing?: RoutingConfig;
   grid?: {
     rows: GridItem[];
     columns: GridItem[];
@@ -100,6 +114,19 @@ interface QuestionData {
   config: QuestionConfig;
 }
 
+interface SectionRoutingConfig {
+  defaultRoute?: string; // "NEXT" | "SUBMIT" | sectionId
+}
+
+interface SectionData {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  routingConfig: SectionRoutingConfig;
+  questions: QuestionData[];
+}
+
 interface FormData {
   id: string;
   title: string;
@@ -109,6 +136,7 @@ interface FormData {
   phoneDescription: string;
   phoneTitle: string;
   phonePlaceholder: string;
+  sections: SectionData[];
   questions: QuestionData[];
 }
 
@@ -136,10 +164,21 @@ function tempId() {
   return `temp-${++tempIdCounter}`;
 }
 
+function SectionContainer({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef} className={className}>
+      {children}
+    </div>
+  );
+}
+
 function SortableQuestion({
   question,
+  sectionIndex,
   qIndex,
   visualIndex,
+  sections,
   updateQuestion,
   removeQuestion,
   addOption,
@@ -147,13 +186,15 @@ function SortableQuestion({
   removeOption,
 }: {
   question: QuestionData;
+  sectionIndex: number;
   qIndex: number;
   visualIndex: number;
-  updateQuestion: (index: number, updates: Partial<QuestionData>) => void;
-  removeQuestion: (index: number) => void;
-  addOption: (qIndex: number) => void;
-  updateOption: (qIndex: number, oIndex: number, value: string) => void;
-  removeOption: (qIndex: number, oIndex: number) => void;
+  sections: SectionData[];
+  updateQuestion: (sectionIndex: number, qIndex: number, updates: Partial<QuestionData>) => void;
+  removeQuestion: (sectionIndex: number, qIndex: number) => void;
+  addOption: (sectionIndex: number, qIndex: number) => void;
+  updateOption: (sectionIndex: number, qIndex: number, oIndex: number, value: string) => void;
+  removeOption: (sectionIndex: number, qIndex: number, oIndex: number) => void;
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
@@ -209,7 +250,7 @@ function SortableQuestion({
               type="text"
               value={question.label}
               onChange={(e) =>
-                updateQuestion(qIndex, { label: e.target.value })
+                updateQuestion(sectionIndex, qIndex, { label: e.target.value })
               }
               className="flex-1 border-b border-transparent text-base font-medium text-gray-900 focus:border-indigo-500 focus:outline-none"
               placeholder="Question"
@@ -221,7 +262,7 @@ function SortableQuestion({
             <select
               value={question.type}
               onChange={(e) =>
-                updateQuestion(qIndex, {
+                updateQuestion(sectionIndex, qIndex, {
                   type: e.target.value as QuestionType,
                   options: requiresOptions(
                     e.target.value as QuestionType
@@ -291,12 +332,40 @@ function SortableQuestion({
                       type="text"
                       value={opt.value}
                       onChange={(e) =>
-                        updateOption(qIndex, oIndex, e.target.value)
+                        updateOption(sectionIndex, qIndex, oIndex, e.target.value)
                       }
                       className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
                     />
+                    {question.config?.routing?.enabled && (
+                      <select
+                        value={(question.config.routing as OptionMatchRouting).rules[opt.value] || "NEXT"}
+                        onChange={(e) => {
+                          const newConfig = { ...question.config };
+                          const routing = { ...(newConfig.routing as OptionMatchRouting) };
+                          routing.rules = { ...routing.rules };
+                          if (e.target.value === "NEXT") {
+                            delete routing.rules[opt.value];
+                          } else {
+                            routing.rules[opt.value] = e.target.value;
+                          }
+                          newConfig.routing = routing;
+                          updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                        }}
+                        className="ml-2 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 focus:border-indigo-500 focus:outline-none max-w-[150px]"
+                      >
+                        <option value="NEXT">Continue to next section</option>
+                        <option value="SUBMIT">Submit form</option>
+                        {sections
+                          .filter((_, i) => i !== sectionIndex)
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              Go to section: {s.title || `Section ${s.order + 1}`}
+                            </option>
+                          ))}
+                      </select>
+                    )}
                     <button
-                      onClick={() => removeOption(qIndex, oIndex)}
+                      onClick={() => removeOption(sectionIndex, qIndex, oIndex)}
                       className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -304,7 +373,7 @@ function SortableQuestion({
                   </div>
                 ))}
                 <button
-                  onClick={() => addOption(qIndex)}
+                  onClick={() => addOption(sectionIndex, qIndex)}
                   className="text-sm text-indigo-600 hover:text-indigo-500"
                 >
                   + Add option
@@ -358,7 +427,7 @@ function SortableQuestion({
                                 columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
                               };
                               newGrid.rows[rIndex] = { ...row, value: e.target.value };
-                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
                             }}
                             className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
                             placeholder={`Row ${rIndex + 1}`}
@@ -371,7 +440,7 @@ function SortableQuestion({
                                 rows: rows.filter((_, i) => i !== rIndex),
                                 columns: question.config.grid?.columns || []
                               };
-                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
                             }}
                             disabled={(question.config.grid?.rows?.length || 0) <= 1}
                             className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
@@ -387,7 +456,7 @@ function SortableQuestion({
                             rows: [...(currentGrid.rows.length ? currentGrid.rows : [{ id: crypto.randomUUID(), value: "Row 1" }]), { id: crypto.randomUUID(), value: `Row ${(currentGrid.rows.length || 1) + 1}` }],
                             columns: currentGrid.columns.length ? currentGrid.columns : [{ id: crypto.randomUUID(), value: "Column 1" }]
                           };
-                          updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                          updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
                         }}
                         className="text-sm text-indigo-600 hover:text-indigo-500 flex items-center gap-1"
                       >
@@ -422,7 +491,7 @@ function SortableQuestion({
                                 columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
                               };
                               newGrid.columns[cIndex] = { ...col, value: e.target.value };
-                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
                             }}
                             className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
                             placeholder={`Column ${cIndex + 1}`}
@@ -435,7 +504,7 @@ function SortableQuestion({
                                 rows: question.config.grid?.rows || [],
                                 columns: cols.filter((_, i) => i !== cIndex)
                               };
-                              updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
                             }}
                             disabled={(question.config.grid?.columns?.length || 0) <= 1}
                             className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
@@ -451,7 +520,7 @@ function SortableQuestion({
                             rows: currentGrid.rows.length ? currentGrid.rows : [{ id: crypto.randomUUID(), value: "Row 1" }],
                             columns: [...(currentGrid.columns.length ? currentGrid.columns : [{ id: crypto.randomUUID(), value: "Column 1" }]), { id: crypto.randomUUID(), value: `Column ${(currentGrid.columns.length || 1) + 1}` }]
                           };
-                          updateQuestion(qIndex, { config: { ...question.config, grid: newGrid } });
+                          updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
                         }}
                         className="text-sm text-indigo-600 hover:text-indigo-500 flex items-center gap-1"
                       >
@@ -483,7 +552,7 @@ function SortableQuestion({
             <span>Required</span>
             <button
               onClick={() =>
-                updateQuestion(qIndex, {
+                updateQuestion(sectionIndex, qIndex, {
                   isRequired: !question.isRequired,
                 })
               }
@@ -514,7 +583,29 @@ function SortableQuestion({
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowMoreMenu(false)} />
                 <div className="absolute bottom-full right-0 mb-2 w-48 rounded-lg bg-white shadow-xl ring-1 ring-black ring-opacity-5 z-20">
-              <div className="py-1">
+                <div className="py-1">
+                {(question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN") && (
+                  <button
+                    onClick={() => {
+                      const newConfig = { ...question.config };
+                      if (newConfig.routing?.enabled) {
+                        delete newConfig.routing;
+                      } else {
+                        newConfig.routing = {
+                          enabled: true,
+                          type: "OPTION_MATCH",
+                          rules: {},
+                        };
+                      }
+                      updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                      setShowMoreMenu(false);
+                    }}
+                    className="flex w-full items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <span>Go to section based on answer</span>
+                    {question.config?.routing?.enabled && <Check className="h-3 w-3 text-indigo-600" />}
+                  </button>
+                )}
                 {(question.type === "SHORT_TEXT" || question.type === "PARAGRAPH" || question.type === "CHECKBOX") && (
                   <button
                     onClick={() => {
@@ -530,7 +621,7 @@ function SortableQuestion({
                           newConfig.validation = { type: "NUMBER", rule: "GREATER_THAN", value: "", errorMessage: "" };
                         }
                       }
-                      updateQuestion(qIndex, { config: newConfig });
+                      updateQuestion(sectionIndex, qIndex, { config: newConfig });
                       setShowMoreMenu(false);
                     }}
                     className="flex w-full items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -546,7 +637,7 @@ function SortableQuestion({
           </div>
 
           <button
-            onClick={() => removeQuestion(qIndex)}
+            onClick={() => removeQuestion(sectionIndex, qIndex)}
             className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
           >
             <Trash2 className="h-4 w-4" />
@@ -569,7 +660,7 @@ function SortableQuestion({
               if (type === "CHECKBOX") rule = "AT_LEAST";
               
               newConfig.validation = { ...newConfig.validation, type, rule };
-              updateQuestion(qIndex, { config: newConfig });
+              updateQuestion(sectionIndex, qIndex, { config: newConfig });
             }}
             className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:border-indigo-500 focus:outline-none"
           >
@@ -590,7 +681,7 @@ function SortableQuestion({
             onChange={(e) => {
               const newConfig = { ...question.config };
               newConfig.validation = { ...newConfig.validation, rule: e.target.value };
-              updateQuestion(qIndex, { config: newConfig });
+              updateQuestion(sectionIndex, qIndex, { config: newConfig });
             }}
             className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:border-indigo-500 focus:outline-none"
           >
@@ -647,7 +738,7 @@ function SortableQuestion({
                 onChange={(e) => {
                   const newConfig = { ...question.config };
                   newConfig.validation = { ...newConfig.validation, value: e.target.value };
-                  updateQuestion(qIndex, { config: newConfig });
+                  updateQuestion(sectionIndex, qIndex, { config: newConfig });
                 }}
                 className="w-20 rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
                 placeholder="Number"
@@ -659,7 +750,7 @@ function SortableQuestion({
                 onChange={(e) => {
                   const newConfig = { ...question.config };
                   newConfig.validation = { ...newConfig.validation, maxValue: e.target.value };
-                  updateQuestion(qIndex, { config: newConfig });
+                  updateQuestion(sectionIndex, qIndex, { config: newConfig });
                 }}
                 className="w-20 rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
                 placeholder="Number"
@@ -672,7 +763,7 @@ function SortableQuestion({
               onChange={(e) => {
                 const newConfig = { ...question.config };
                 newConfig.validation = { ...newConfig.validation, value: e.target.value };
-                updateQuestion(qIndex, { config: newConfig });
+                updateQuestion(sectionIndex, qIndex, { config: newConfig });
               }}
               className="flex-1 min-w-[100px] rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
               placeholder={question.config.validation?.type === "REGEX" ? "Pattern" : "Value"}
@@ -685,7 +776,7 @@ function SortableQuestion({
             onChange={(e) => {
               const newConfig = { ...question.config };
               newConfig.validation = { ...newConfig.validation, errorMessage: e.target.value };
-              updateQuestion(qIndex, { config: newConfig });
+              updateQuestion(sectionIndex, qIndex, { config: newConfig });
             }}
             className="flex-1 min-w-[150px] rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
             placeholder="Custom error text"
@@ -695,7 +786,7 @@ function SortableQuestion({
               const newConfig = { ...question.config };
               newConfig.validationEnabled = false;
               delete newConfig.validation;
-              updateQuestion(qIndex, { config: newConfig });
+              updateQuestion(sectionIndex, qIndex, { config: newConfig });
             }}
             className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
             title="Remove validation"
@@ -734,6 +825,7 @@ export default function FormBuilderPage() {
   const [allUsers, setAllUsers] = useState<Array<{ id: string; email: string; nickname: string; role: string; status: string }>>([]);
   const [collabLoading, setCollabLoading] = useState(false);
   const [collabSearch, setCollabSearch] = useState("");
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const isAdmin = currentUserRole === "ADMIN";
 
@@ -773,39 +865,59 @@ export default function FormBuilderPage() {
     })
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setForm((prev) => {
+      if (!prev) return prev;
+      const result = moveQuestionBetweenSections(prev.sections, active.id as string, over.id as string);
+      return result ? { ...prev, sections: result } : prev;
+    });
+  };
 
-    if (over && active.id !== over.id) {
-      setForm((prev) => {
-        if (!prev) return prev;
-        
-        const oldIndex = prev.questions.findIndex((q) => q.id === active.id);
-        const newIndex = prev.questions.findIndex((q) => q.id === over.id);
-
-        const newQuestions = [...prev.questions];
-        const [movedQuestion] = newQuestions.splice(oldIndex, 1);
-        newQuestions.splice(newIndex, 0, movedQuestion);
-
-        // Update order property
-        newQuestions.forEach((q, index) => {
-          q.order = index;
-        });
-
-        return { ...prev, questions: newQuestions };
-      });
-    }
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setForm((prev) => {
+      if (!prev) return prev;
+      const result = reorderQuestionWithinSection(prev.sections, active.id as string, over.id as string);
+      return result ? { ...prev, sections: result } : prev;
+    });
   };
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
     if (res.ok) {
       const data = await res.json();
-      const questions = data.questions.map((q: QuestionData & { config: string }) => ({
+      const questions = (data.questions || []).map((q: QuestionData & { config: string }) => ({
         ...q,
         config: typeof q.config === "string" ? JSON.parse(q.config) : q.config,
       }));
-      setForm({ ...data, questions });
+      const sections: SectionData[] = (data.sections || []).map((s: any) => ({
+        ...s,
+        routingConfig: typeof s.routingConfig === "string" ? JSON.parse(s.routingConfig) : (s.routingConfig || {}),
+        questions: (s.questions || []).map((q: any) => ({
+          ...q,
+          config: typeof q.config === "string" ? JSON.parse(q.config) : q.config,
+        })),
+      }));
+      // If no sections exist, create a default one from flat questions
+      if (sections.length === 0 && questions.length > 0) {
+        sections.push({
+          id: tempId(),
+          title: "Section 1",
+          description: "",
+          order: 0,
+          routingConfig: {},
+          questions,
+        });
+      }
+      setForm({ ...data, sections, questions });
     }
   }, [formId]);
 
@@ -836,16 +948,22 @@ export default function FormBuilderPage() {
             phoneDescription: form.phoneDescription,
             phoneTitle: form.phoneTitle,
             phonePlaceholder: form.phonePlaceholder,
-            questions: form.questions.map((q) => ({
-              type: q.type,
-              label: q.label,
-              isRequired: q.isRequired,
-              order: q.order,
-              config: q.config,
-              options: q.options.map((o) => ({
-                value: o.value,
-                order: o.order,
-                group: o.group,
+            sections: form.sections.map((s) => ({
+              title: s.title,
+              description: s.description,
+              order: s.order,
+              routingConfig: s.routingConfig,
+              questions: s.questions.map((q) => ({
+                type: q.type,
+                label: q.label,
+                isRequired: q.isRequired,
+                order: q.order,
+                config: q.config,
+                options: q.options.map((o) => ({
+                  value: o.value,
+                  order: o.order,
+                  group: o.group,
+                })),
               })),
             })),
           }),
@@ -881,14 +999,17 @@ export default function FormBuilderPage() {
     }
   }, [activeTab, fetchResponses]);
 
-  function addQuestion(type: QuestionType) {
+  function addQuestion(type: QuestionType, sectionIndex?: number) {
     if (!form) return;
+    const si = sectionIndex ?? form.sections.length - 1;
+    if (si < 0 || si >= form.sections.length) return;
+    const section = form.sections[si];
     const newQ: QuestionData = {
       id: tempId(),
       type,
       label: "",
       isRequired: false,
-      order: form.questions.length,
+      order: section.questions.length,
       options: requiresOptions(type)
         ? [{ id: tempId(), value: "Option 1", order: 0, group: "default" }]
         : [],
@@ -899,71 +1020,135 @@ export default function FormBuilderPage() {
         }
       } : {},
     };
-    setForm({ ...form, questions: [...form.questions, newQ] });
+    const newSections = [...form.sections];
+    newSections[si] = { ...section, questions: [...section.questions, newQ] };
+    setForm({ ...form, sections: newSections });
     setShowTypeMenu(false);
   }
 
-  function updateQuestion(index: number, updates: Partial<QuestionData>) {
+  function updateQuestionInSection(sectionIndex: number, qIndex: number, updates: Partial<QuestionData>) {
     if (!form) return;
-    const questions = [...form.questions];
-    questions[index] = { ...questions[index], ...updates };
-    setForm({ ...form, questions });
+    const newSections = [...form.sections];
+    const section = { ...newSections[sectionIndex] };
+    const questions = [...section.questions];
+    questions[qIndex] = { ...questions[qIndex], ...updates };
+    section.questions = questions;
+    newSections[sectionIndex] = section;
+    setForm({ ...form, sections: newSections });
   }
 
-  function removeQuestion(index: number) {
+  function removeQuestionFromSection(sectionIndex: number, qIndex: number) {
     if (!form) return;
-    const q = form.questions[index];
-    // Don't allow removing the locked phone number field
+    const section = form.sections[sectionIndex];
+    const q = section.questions[qIndex];
     if (q.config?.locked) {
       alert("The Phone Number field is required and cannot be removed.");
       return;
     }
-    const questions = form.questions.filter((_, i) => i !== index);
+    const newSections = [...form.sections];
+    const questions = section.questions.filter((_, i) => i !== qIndex);
     questions.forEach((q, i) => (q.order = i));
-    setForm({ ...form, questions });
+    newSections[sectionIndex] = { ...section, questions };
+    setForm({ ...form, sections: newSections });
   }
 
-  function addOption(qIndex: number) {
+  function addOptionInSection(sectionIndex: number, qIndex: number) {
     if (!form) return;
-    const questions = [...form.questions];
-    const q = questions[qIndex];
+    const newSections = [...form.sections];
+    const section = { ...newSections[sectionIndex] };
+    const questions = [...section.questions];
+    const q = { ...questions[qIndex], options: [...questions[qIndex].options] };
     q.options.push({
       id: tempId(),
       value: `Option ${q.options.length + 1}`,
       order: q.options.length,
       group: "default",
     });
-    setForm({ ...form, questions });
+    questions[qIndex] = q;
+    section.questions = questions;
+    newSections[sectionIndex] = section;
+    setForm({ ...form, sections: newSections });
   }
 
-  function updateOption(qIndex: number, oIndex: number, value: string) {
+  function updateOptionInSection(sectionIndex: number, qIndex: number, oIndex: number, value: string) {
     if (!form) return;
-    const questions = [...form.questions];
-    questions[qIndex].options[oIndex].value = value;
-    setForm({ ...form, questions });
+    const newSections = [...form.sections];
+    const section = { ...newSections[sectionIndex] };
+    const questions = [...section.questions];
+    const q = { ...questions[qIndex], options: [...questions[qIndex].options] };
+    const oldOptionValue = q.options[oIndex].value;
+    q.config = updateRoutingOnOptionRename(q.config, oldOptionValue, value);
+
+    q.options[oIndex] = { ...q.options[oIndex], value };
+    questions[qIndex] = q;
+    section.questions = questions;
+    newSections[sectionIndex] = section;
+    setForm({ ...form, sections: newSections });
   }
 
-  function removeOption(qIndex: number, oIndex: number) {
+  function removeOptionFromSection(sectionIndex: number, qIndex: number, oIndex: number) {
     if (!form) return;
-    const questions = [...form.questions];
-    questions[qIndex].options = questions[qIndex].options.filter(
-      (_, i) => i !== oIndex
-    );
-    questions[qIndex].options.forEach((o, i) => (o.order = i));
-    setForm({ ...form, questions });
+    const newSections = [...form.sections];
+    const section = { ...newSections[sectionIndex] };
+    const questions = [...section.questions];
+    const q = { ...questions[qIndex] };
+    const removedOptionValue = q.options[oIndex].value;
+    q.config = removeRoutingForOption(q.config, removedOptionValue);
+
+    q.options = q.options.filter((_, i) => i !== oIndex);
+    q.options.forEach((o, i) => (o.order = i));
+    questions[qIndex] = q;
+    section.questions = questions;
+    newSections[sectionIndex] = section;
+    setForm({ ...form, sections: newSections });
   }
 
-  function moveQuestion(index: number, direction: "up" | "down") {
+  // Section management functions
+  function addSection() {
     if (!form) return;
-    const questions = [...form.questions];
-    const target = direction === "up" ? index - 1 : index + 1;
-    if (target < 0 || target >= questions.length) return;
-    [questions[index], questions[target]] = [
-      questions[target],
-      questions[index],
-    ];
-    questions.forEach((q, i) => (q.order = i));
-    setForm({ ...form, questions });
+    const newSection: SectionData = {
+      id: tempId(),
+      title: `Section ${form.sections.length + 1}`,
+      description: "",
+      order: form.sections.length,
+      routingConfig: {},
+      questions: [],
+    };
+    setForm({ ...form, sections: [...form.sections, newSection] });
+  }
+
+  function updateSection(sectionIndex: number, updates: Partial<SectionData>) {
+    if (!form) return;
+    const newSections = [...form.sections];
+    newSections[sectionIndex] = { ...newSections[sectionIndex], ...updates };
+    setForm({ ...form, sections: newSections });
+  }
+
+  function removeSection(sectionIndex: number) {
+    if (!form) return;
+    if (form.sections.length <= 1) {
+      alert("You must have at least one section.");
+      return;
+    }
+    const newSections = form.sections.filter((_, i) => i !== sectionIndex);
+    newSections.forEach((s, i) => (s.order = i));
+    setForm({ ...form, sections: newSections });
+  }
+
+  function moveSectionUp(sectionIndex: number) {
+    if (!form || sectionIndex <= 0) return;
+    const newSections = [...form.sections];
+    [newSections[sectionIndex], newSections[sectionIndex - 1]] = [newSections[sectionIndex - 1], newSections[sectionIndex]];
+    newSections.forEach((s, i) => (s.order = i));
+    setForm({ ...form, sections: newSections });
+  }
+
+  function moveSectionDown(sectionIndex: number) {
+    if (!form || sectionIndex >= form.sections.length - 1) return;
+    const newSections = [...form.sections];
+    [newSections[sectionIndex], newSections[sectionIndex + 1]] = [newSections[sectionIndex + 1], newSections[sectionIndex]];
+    newSections.forEach((s, i) => (s.order = i));
+    setForm({ ...form, sections: newSections });
   }
 
   async function handleDeleteResponse(responseId: string) {
@@ -1234,7 +1419,9 @@ export default function FormBuilderPage() {
         {/* Questions */}
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={pointerWithin}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
           <div className="space-y-4">
@@ -1307,30 +1494,79 @@ export default function FormBuilderPage() {
               </div>
             </div>
 
-            <SortableContext
-              items={form.questions.filter(q => !q.config?.isPhoneNumber).map((q) => q.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {form.questions.filter(q => !q.config?.isPhoneNumber).map((question, qIndex) => {
-                // We need to pass the real index from the full array to the handlers
-                const realIndex = form.questions.findIndex(q => q.id === question.id);
-                // Also pass a visual index for the UI (Q1, Q2, etc) ignoring the phone number
-                return (
-                  <SortableQuestion
-                    key={question.id}
-                    question={question}
-                    qIndex={realIndex}
-                    visualIndex={qIndex}
-                    updateQuestion={updateQuestion}
-                    removeQuestion={removeQuestion}
-                    addOption={addOption}
-                    updateOption={updateOption}
-                    removeOption={removeOption}
-                  />
-                );
-              })}
-            </SortableContext>
+            {form.sections.map((section, sIndex) => {
+              let globalQIndex = 0;
+              for (let si = 0; si < sIndex; si++) {
+                globalQIndex += form.sections[si].questions.filter(q => !q.config?.isPhoneNumber).length;
+              }
+              return (
+                <SectionContainer key={section.id} id={section.id} className="space-y-3 min-h-[50px]">
+                  {/* Section header */}
+                  {form.sections.length > 1 && (
+                    <div className="rounded-xl border-l-4 border-l-indigo-400 bg-indigo-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={section.title}
+                            onChange={(e) => updateSection(sIndex, { title: e.target.value })}
+                            className="w-full border-b border-transparent bg-transparent text-lg font-semibold text-indigo-900 focus:border-indigo-500 focus:outline-none"
+                            placeholder="Section title"
+                          />
+                          <input
+                            type="text"
+                            value={section.description}
+                            onChange={(e) => updateSection(sIndex, { description: e.target.value })}
+                            className="mt-1 w-full border-b border-transparent bg-transparent text-sm text-indigo-700 focus:border-indigo-500 focus:outline-none"
+                            placeholder="Section description (optional)"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => moveSectionUp(sIndex)} disabled={sIndex === 0} className="rounded p-1 text-indigo-400 hover:bg-indigo-100 disabled:opacity-30" title="Move up"><ChevronUp className="h-4 w-4" /></button>
+                          <button onClick={() => moveSectionDown(sIndex)} disabled={sIndex === form.sections.length - 1} className="rounded p-1 text-indigo-400 hover:bg-indigo-100 disabled:opacity-30" title="Move down"><ChevronDown className="h-4 w-4" /></button>
+                          <button onClick={() => removeSection(sIndex)} className="rounded p-1 text-red-400 hover:bg-red-100" title="Delete section"><Trash2 className="h-4 w-4" /></button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Questions in this section */}
+                  <SortableContext
+                    items={section.questions.filter(q => !q.config?.isPhoneNumber).map((q) => q.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {section.questions.filter(q => !q.config?.isPhoneNumber).map((question, qIdx) => (
+                      <SortableQuestion
+                        key={question.id}
+                        question={question}
+                        sectionIndex={sIndex}
+                        qIndex={section.questions.findIndex(q => q.id === question.id)}
+                        visualIndex={globalQIndex + qIdx}
+                        sections={form.sections}
+                        updateQuestion={updateQuestionInSection}
+                        removeQuestion={removeQuestionFromSection}
+                        addOption={addOptionInSection}
+                        updateOption={updateOptionInSection}
+                        removeOption={removeOptionFromSection}
+                      />
+                    ))}
+                  </SortableContext>
+                </SectionContainer>
+              );
+            })}
           </div>
+          <DragOverlay dropAnimation={null}>
+            {activeDragId && form ? (() => {
+              const pos = findSectionForQuestion(form.sections, activeDragId);
+              if (!pos) return null;
+              const q = form.sections[pos.sIdx].questions[pos.qIdx];
+              return (
+                <div className="rounded-lg border bg-white p-3 shadow-lg ring-2 ring-indigo-500 ring-opacity-50 opacity-90 max-w-md">
+                  <span className="text-sm font-medium text-gray-900">{q.label || "Untitled question"}</span>
+                </div>
+              );
+            })() : null}
+          </DragOverlay>
         </DndContext>
 
         {/* Floating toolbar */}
@@ -1386,20 +1622,21 @@ export default function FormBuilderPage() {
                     const text = await file.text();
                     const imported = JSON.parse(text);
                     if (Array.isArray(imported.questions)) {
+                      const lastSectionIdx = form.sections.length - 1;
+                      const lastSection = form.sections[lastSectionIdx];
                       const newQuestions = imported.questions.map(
                         (q: QuestionData, i: number) => ({
                           ...q,
                           id: tempId(),
-                          order: form.questions.length + i,
+                          order: lastSection.questions.length + i,
                           options: (q.options || []).map(
                             (o: OptionData) => ({ ...o, id: tempId() })
                           ),
                         })
                       );
-                      setForm({
-                        ...form,
-                        questions: [...form.questions, ...newQuestions],
-                      });
+                      const newSections = [...form.sections];
+                      newSections[lastSectionIdx] = { ...lastSection, questions: [...lastSection.questions, ...newQuestions] };
+                      setForm({ ...form, sections: newSections });
                     }
                   } catch {
                     alert("Invalid JSON file.");
@@ -1416,16 +1653,20 @@ export default function FormBuilderPage() {
             <button
               onClick={() => {
                 if (!form) return;
+                const lastSi = form.sections.length - 1;
+                const lastSection = form.sections[lastSi];
                 const newQ: QuestionData = {
                   id: tempId(),
                   type: "SHORT_TEXT" as QuestionType,
                   label: "Section Title",
                   isRequired: false,
-                  order: form.questions.length,
+                  order: lastSection.questions.length,
                   options: [],
                   config: { isTitle: true },
                 };
-                setForm({ ...form, questions: [...form.questions, newQ] });
+                const newSections = [...form.sections];
+                newSections[lastSi] = { ...lastSection, questions: [...lastSection.questions, newQ] };
+                setForm({ ...form, sections: newSections });
               }}
               className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Add Title"
             >
@@ -1436,16 +1677,20 @@ export default function FormBuilderPage() {
             <button
               onClick={() => {
                 if (!form) return;
+                const lastSi = form.sections.length - 1;
+                const lastSection = form.sections[lastSi];
                 const newQ: QuestionData = {
                   id: tempId(),
                   type: "FILE_UPLOAD" as QuestionType,
                   label: "Image / Video",
                   isRequired: false,
-                  order: form.questions.length,
+                  order: lastSection.questions.length,
                   options: [],
                   config: { isMedia: true },
                 };
-                setForm({ ...form, questions: [...form.questions, newQ] });
+                const newSections = [...form.sections];
+                newSections[lastSi] = { ...lastSection, questions: [...lastSection.questions, newQ] };
+                setForm({ ...form, sections: newSections });
               }}
               className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Add Image/Video"
             >
@@ -1454,19 +1699,7 @@ export default function FormBuilderPage() {
 
             {/* Add Section */}
             <button
-              onClick={() => {
-                if (!form) return;
-                const newQ: QuestionData = {
-                  id: tempId(),
-                  type: "SHORT_TEXT" as QuestionType,
-                  label: "New Section",
-                  isRequired: false,
-                  order: form.questions.length,
-                  options: [],
-                  config: { isSection: true },
-                };
-                setForm({ ...form, questions: [...form.questions, newQ] });
-              }}
+              onClick={() => addSection()}
               className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Add Section"
             >
               <SeparatorHorizontal className="h-4 w-4" />
@@ -1731,7 +1964,7 @@ export default function FormBuilderPage() {
 
               {/* Preview questions */}
               <div className="space-y-4 px-4 pb-4">
-                {form.questions.map((question) => {
+                {form.sections.flatMap(s => s.questions).map((question) => {
                   const config = question.config;
                   const isPhone = Boolean(config?.isPhoneNumber);
                   return (

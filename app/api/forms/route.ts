@@ -72,26 +72,52 @@ export async function POST(request: NextRequest) {
     const title = sanitize(body.title || "Untitled Form");
     const description = sanitize(body.description || "");
 
+    // Create form first
     const form = await prisma.form.create({
       data: {
         title,
         description,
         authorId: session.userId,
-        // Auto-create the required Phone Number field
-        questions: {
-          create: {
-            type: "SHORT_TEXT",
-            label: "Phone Number",
-            isRequired: true,
-            order: 0,
-            config: JSON.stringify({ isPhoneNumber: true, locked: true }),
-          },
-        },
       },
-      include: { questions: { include: { options: true } } },
     });
 
-    return NextResponse.json(form, { status: 201 });
+    // Create default section
+    const section = await prisma.section.create({
+      data: {
+        formId: form.id,
+        title: "Section 1",
+        order: 0,
+      },
+    });
+
+    // Create the phone number question linked to both form and section
+    await prisma.question.create({
+      data: {
+        formId: form.id,
+        sectionId: section.id,
+        type: "SHORT_TEXT",
+        label: "Phone Number",
+        isRequired: true,
+        order: 0,
+        config: JSON.stringify({ isPhoneNumber: true, locked: true }),
+      },
+    });
+
+    // Return full form with sections and questions
+    const fullForm = await prisma.form.findUnique({
+      where: { id: form.id },
+      include: {
+        sections: {
+          include: {
+            questions: { include: { options: true }, orderBy: { order: "asc" } },
+          },
+          orderBy: { order: "asc" },
+        },
+        questions: { include: { options: true }, orderBy: { order: "asc" } },
+      },
+    });
+
+    return NextResponse.json(fullForm, { status: 201 });
   } catch (err) {
     console.error("POST /api/forms error:", err);
     return NextResponse.json(

@@ -19,6 +19,15 @@ export async function GET(
   const form = await prisma.form.findUnique({
     where: { id },
     include: {
+      sections: {
+        include: {
+          questions: {
+            include: { options: { orderBy: { order: "asc" } } },
+            orderBy: { order: "asc" },
+          },
+        },
+        orderBy: { order: "asc" },
+      },
       questions: {
         include: { options: { orderBy: { order: "asc" } } },
         orderBy: { order: "asc" },
@@ -87,12 +96,79 @@ export async function PUT(
       data: updateData,
     });
 
-    // Update questions if provided
-    if (body.questions && Array.isArray(body.questions)) {
-      // Delete old questions (we no longer skip the phone number since it's a form-level setting)
-      await prisma.question.deleteMany({
-        where: { formId: id },
-      });
+    // Update sections if provided
+    if (body.sections && Array.isArray(body.sections)) {
+      // Delete old sections (cascades to questions in those sections)
+      await prisma.question.deleteMany({ where: { formId: id } });
+      await prisma.section.deleteMany({ where: { formId: id } });
+
+      for (const s of body.sections) {
+        const section = await prisma.section.create({
+          data: {
+            formId: id,
+            title: sanitize(s.title || "Untitled Section"),
+            description: sanitize(s.description || ""),
+            order: Number(s.order),
+            routingConfig: JSON.stringify(s.routingConfig || {}),
+          },
+        });
+
+        if (s.questions && Array.isArray(s.questions)) {
+          for (const q of s.questions) {
+            const config = q.config || {};
+            if (config.grid) {
+              if (Array.isArray(config.grid.rows)) {
+                config.grid.rows = config.grid.rows.map((r: any) => ({
+                  ...r,
+                  value: sanitize(r.value || ""),
+                }));
+              }
+              if (Array.isArray(config.grid.columns)) {
+                config.grid.columns = config.grid.columns.map((c: any) => ({
+                  ...c,
+                  value: sanitize(c.value || ""),
+                }));
+              }
+            }
+
+            const question = await prisma.question.create({
+              data: {
+                formId: id,
+                sectionId: section.id,
+                type: sanitize(q.type),
+                label: sanitize(q.label),
+                isRequired: Boolean(q.isRequired),
+                order: Number(q.order),
+                config: JSON.stringify(config),
+              },
+            });
+
+            if (q.options && Array.isArray(q.options)) {
+              for (const opt of q.options) {
+                await prisma.option.create({
+                  data: {
+                    questionId: question.id,
+                    value: sanitize(opt.value),
+                    order: Number(opt.order),
+                    group: opt.group || "default",
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+    } else if (body.questions && Array.isArray(body.questions)) {
+      // Legacy: questions without sections (backwards compat)
+      await prisma.question.deleteMany({ where: { formId: id } });
+
+      // Ensure at least one section exists
+      let section = await prisma.section.findFirst({ where: { formId: id }, orderBy: { order: "asc" } });
+      if (!section) {
+        section = await prisma.section.create({
+          data: { formId: id, title: "Section 1", order: 0 },
+        });
+      }
 
       for (const q of body.questions) {
         const config = q.config || {};
@@ -111,20 +187,18 @@ export async function PUT(
           }
         }
 
-        const questionData = {
-          formId: id,
-          type: sanitize(q.type),
-          label: sanitize(q.label),
-          isRequired: Boolean(q.isRequired),
-          order: Number(q.order),
-          config: JSON.stringify(config),
-        };
-
         const question = await prisma.question.create({
-          data: questionData,
+          data: {
+            formId: id,
+            sectionId: section.id,
+            type: sanitize(q.type),
+            label: sanitize(q.label),
+            isRequired: Boolean(q.isRequired),
+            order: Number(q.order),
+            config: JSON.stringify(config),
+          },
         });
 
-        // Create options if provided
         if (q.options && Array.isArray(q.options)) {
           for (const opt of q.options) {
             await prisma.option.create({
@@ -143,6 +217,15 @@ export async function PUT(
     const updatedForm = await prisma.form.findUnique({
       where: { id },
       include: {
+        sections: {
+          include: {
+            questions: {
+              include: { options: { orderBy: { order: "asc" } } },
+              orderBy: { order: "asc" },
+            },
+          },
+          orderBy: { order: "asc" },
+        },
         questions: {
           include: { options: { orderBy: { order: "asc" } } },
           orderBy: { order: "asc" },
