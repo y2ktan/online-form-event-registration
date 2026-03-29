@@ -176,10 +176,10 @@ function tempId() {
   return `temp-${++tempIdCounter}`;
 }
 
-function SectionContainer({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
+function SectionContainer({ id, children, className, onClick, onFocus }: { id: string; children: React.ReactNode; className?: string; onClick?: () => void; onFocus?: () => void }) {
   const { setNodeRef } = useDroppable({ id });
   return (
-    <div ref={setNodeRef} className={className}>
+    <div ref={setNodeRef} className={className} onClick={onClick} onFocusCapture={onFocus}>
       {children}
     </div>
   );
@@ -981,6 +981,7 @@ export default function FormBuilderPage() {
   const [collabLoading, setCollabLoading] = useState(false);
   const [collabSearch, setCollabSearch] = useState("");
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [customFonts, setCustomFonts] = useState<{ id: string; name: string; filename: string }[]>([]);
   const [canUndo, setCanUndo] = useState(false);
@@ -1215,7 +1216,7 @@ export default function FormBuilderPage() {
   function addQuestion(type: QuestionType, sectionIndex?: number) {
     if (!form) return;
     pushHistoryNow();
-    const si = sectionIndex ?? form.sections.length - 1;
+    const si = sectionIndex ?? activeSectionIndex;
     if (si < 0 || si >= form.sections.length) return;
     const section = form.sections[si];
     const newQ: QuestionData = {
@@ -1349,7 +1350,10 @@ export default function FormBuilderPage() {
     }
     pushHistoryNow();
     const result = removeSectionWithQuestions(form.sections, sectionIndex);
-    if (result) setForm({ ...form, sections: result });
+    if (result) {
+      setForm({ ...form, sections: result });
+      setActiveSectionIndex((prev) => Math.min(prev, result.length - 1));
+    }
   }
 
   function moveSectionUp(sectionIndex: number) {
@@ -1901,8 +1905,9 @@ export default function FormBuilderPage() {
               for (let si = 0; si < sIndex; si++) {
                 globalQIndex += form.sections[si].questions.filter(q => !q.config?.isPhoneNumber).length;
               }
+              const isActiveSection = activeSectionIndex === sIndex;
               return (
-                <SectionContainer key={section.id} id={section.id} className="space-y-3 min-h-[50px]">
+                <SectionContainer key={section.id} id={section.id} className={`space-y-3 min-h-[50px] rounded-xl transition-shadow ${form.sections.length > 1 && isActiveSection ? "ring-2 ring-indigo-300 ring-offset-2" : ""}`} onClick={() => setActiveSectionIndex(sIndex)} onFocus={() => setActiveSectionIndex(sIndex)}>
                   {/* Section header */}
                   {form.sections.length > 1 && (
                     <div className="rounded-xl border-l-4 border-l-indigo-400 bg-indigo-50 p-4">
