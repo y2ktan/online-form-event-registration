@@ -840,9 +840,9 @@ export default function PublicFormPage() {
                     onChange={(e) =>
                       updateAnswer(question.id, e.target.value)
                     }
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className={`block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${answers[question.id] ? "text-gray-900" : "text-gray-400"}`}
                   >
-                    <option value="">Choose</option>
+                    <option value="" disabled className="text-gray-400">Choose</option>
                     {question.options.map((opt) => (
                       <option key={opt.id} value={opt.value}>
                         {opt.value}
