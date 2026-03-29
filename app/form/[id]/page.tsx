@@ -495,6 +495,9 @@ export default function PublicFormPage() {
           formId: form.id,
           phoneNumber: form.collectPhone ? phoneNumber : undefined,
           answers: answers,
+          visitedSectionIds: [...new Set([...sectionHistory, currentSectionIndex])].map(
+            (idx) => form.sections[idx]?.id
+          ).filter(Boolean),
         }),
       });
 

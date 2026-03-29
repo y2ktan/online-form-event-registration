@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { formId, phoneNumber, answers } = body;
+    const { formId, phoneNumber, answers, visitedSectionIds } = body;
 
     if (!formId || !answers) {
       return NextResponse.json(
@@ -193,6 +193,7 @@ export async function POST(request: NextRequest) {
       where: { id: formId },
       include: {
         questions: { orderBy: { order: "asc" } },
+        sections: { orderBy: { order: "asc" } },
       },
     });
 
@@ -207,6 +208,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Build set of visited section IDs for scoped validation
+    const visitedSet: Set<string> | null = Array.isArray(visitedSectionIds) && visitedSectionIds.length > 0
+      ? new Set(visitedSectionIds as string[])
+      : null;
+
     // Identify phone number question IDs to exclude from answer processing
     const phoneQuestionIds = new Set<string>();
     for (const question of form.questions) {
@@ -216,6 +222,16 @@ export async function POST(request: NextRequest) {
       } catch { /* ignore parse errors */ }
       if (config.isPhoneNumber) {
         phoneQuestionIds.add(question.id);
+        continue;
+      }
+
+      // Skip decorative title questions — they have no user input
+      if (config.isTitle) {
+        continue;
+      }
+
+      // Skip questions in sections the user never visited (routing may skip sections)
+      if (visitedSet && question.sectionId && !visitedSet.has(question.sectionId)) {
         continue;
       }
 
