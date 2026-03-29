@@ -372,17 +372,60 @@ function SortableQuestion({
 
             {requiresOptions(question.type) && (
               <div className="space-y-2">
-                {question.options.map((opt, oIndex) => (
+                {question.options.map((opt, oIndex) => {
+                  const hasDefault = question.config?.defaultValue !== undefined;
+                  const isDefaultSelected = hasDefault && (
+                    question.type === "CHECKBOX"
+                      ? (() => { try { return (JSON.parse(question.config.defaultValue as string) as string[]).includes(opt.value); } catch { return false; } })()
+                      : question.config.defaultValue === opt.value
+                  );
+                  const toggleDefault = () => {
+                    if (!hasDefault) return;
+                    const newConfig = { ...question.config };
+                    if (question.type === "CHECKBOX") {
+                      let vals: string[] = [];
+                      try { vals = JSON.parse(newConfig.defaultValue as string); } catch { /* */ }
+                      if (vals.includes(opt.value)) {
+                        vals = vals.filter((v) => v !== opt.value);
+                      } else {
+                        vals.push(opt.value);
+                      }
+                      newConfig.defaultValue = JSON.stringify(vals);
+                    } else {
+                      newConfig.defaultValue = isDefaultSelected ? "" : opt.value;
+                    }
+                    updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                  };
+                  return (
                   <div key={opt.id} className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div
+                      className={`flex items-center gap-2 rounded-lg px-1 -mx-1 ${question.type === "DROPDOWN" && hasDefault && isDefaultSelected ? "bg-indigo-50 ring-1 ring-indigo-200" : ""}`}
+                      onClick={question.type === "DROPDOWN" && hasDefault ? toggleDefault : undefined}
+                      style={question.type === "DROPDOWN" && hasDefault ? { cursor: "pointer" } : undefined}
+                      title={question.type === "DROPDOWN" && hasDefault ? (isDefaultSelected ? "Remove as default" : "Set as default") : undefined}
+                    >
                       {question.type === "MULTIPLE_CHOICE" && (
-                        <div className="h-4 w-4 shrink-0 rounded-full border-2 border-gray-300" />
+                        <button
+                          type="button"
+                          onClick={toggleDefault}
+                          className={`h-4 w-4 shrink-0 rounded-full border-2 ${hasDefault ? "cursor-pointer" : "cursor-default"} ${isDefaultSelected ? "border-indigo-500 bg-indigo-500" : "border-gray-300"}`}
+                          title={hasDefault ? (isDefaultSelected ? "Remove as default" : "Set as default") : ""}
+                        >
+                          {isDefaultSelected && <div className="mx-auto mt-[3px] h-1.5 w-1.5 rounded-full bg-white" />}
+                        </button>
                       )}
                       {question.type === "CHECKBOX" && (
-                        <div className="h-4 w-4 shrink-0 rounded border-2 border-gray-300" />
+                        <button
+                          type="button"
+                          onClick={toggleDefault}
+                          className={`h-4 w-4 shrink-0 rounded border-2 flex items-center justify-center ${hasDefault ? "cursor-pointer" : "cursor-default"} ${isDefaultSelected ? "border-indigo-500 bg-indigo-500" : "border-gray-300"}`}
+                          title={hasDefault ? (isDefaultSelected ? "Remove as default" : "Set as default") : ""}
+                        >
+                          {isDefaultSelected && <Check className="h-3 w-3 text-white" />}
+                        </button>
                       )}
                       {question.type === "DROPDOWN" && (
-                        <span className="text-sm text-gray-400 shrink-0">
+                        <span className={`text-sm shrink-0 ${isDefaultSelected ? "font-bold text-indigo-600" : "text-gray-400"}`}>
                           {oIndex + 1}.
                         </span>
                       )}
@@ -392,10 +435,10 @@ function SortableQuestion({
                         onChange={(e) =>
                           updateOption(sectionIndex, qIndex, oIndex, e.target.value)
                         }
-                        className="min-w-0 flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                        className="min-w-0 flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none bg-transparent"
                       />
                       <button
-                        onClick={() => removeOption(sectionIndex, qIndex, oIndex)}
+                        onClick={(e) => { e.stopPropagation(); removeOption(sectionIndex, qIndex, oIndex); }}
                         className="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -432,7 +475,8 @@ function SortableQuestion({
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {/* "Other" option row (non-editable label, removable) */}
                 {question.config?.hasOtherOption && (question.type === "MULTIPLE_CHOICE" || question.type === "CHECKBOX") && (
                   <div className="flex items-center gap-2">
@@ -697,6 +741,24 @@ function SortableQuestion({
                   >
                     <span>Go to section based on answer</span>
                     {question.config?.routing?.enabled && <Check className="h-3 w-3 text-indigo-600" />}
+                  </button>
+                )}
+                {(question.type === "MULTIPLE_CHOICE" || question.type === "CHECKBOX" || question.type === "DROPDOWN") && (
+                  <button
+                    onClick={() => {
+                      const newConfig = { ...question.config };
+                      if (newConfig.defaultValue !== undefined) {
+                        delete newConfig.defaultValue;
+                      } else {
+                        newConfig.defaultValue = question.type === "CHECKBOX" ? "[]" : "";
+                      }
+                      updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                      setShowMoreMenu(false);
+                    }}
+                    className="flex w-full items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <span>Set default value</span>
+                    {question.config?.defaultValue !== undefined && <Check className="h-3 w-3 text-indigo-600" />}
                   </button>
                 )}
                 {(question.type === "SHORT_TEXT" || question.type === "PARAGRAPH" || question.type === "CHECKBOX") && (
@@ -2365,7 +2427,7 @@ export default function FormBuilderPage() {
                           <div className="space-y-2">
                             {question.options.map((opt) => (
                               <label key={opt.id} className="flex items-center gap-3 p-1">
-                                <input type="radio" disabled className="h-4 w-4" />
+                                <input type="radio" disabled checked={config?.defaultValue === opt.value} className="h-4 w-4" />
                                 <span className="text-sm text-gray-600">{opt.value}</span>
                               </label>
                             ))}
@@ -2373,19 +2435,23 @@ export default function FormBuilderPage() {
                         )}
                         {question.type === "CHECKBOX" && (
                           <div className="space-y-2">
-                            {question.options.map((opt) => (
+                            {question.options.map((opt) => {
+                              let cbChecked = false;
+                              try { cbChecked = config?.defaultValue ? (JSON.parse(config.defaultValue as string) as string[]).includes(opt.value) : false; } catch { /* */ }
+                              return (
                               <label key={opt.id} className="flex items-center gap-3 p-1">
-                                <input type="checkbox" disabled className="h-4 w-4 rounded" />
+                                <input type="checkbox" disabled checked={cbChecked} className="h-4 w-4 rounded" />
                                 <span className="text-sm text-gray-600">{opt.value}</span>
                               </label>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                         {question.type === "DROPDOWN" && (
-                          <select disabled className="block w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-400">
-                            <option>Choose</option>
+                          <select disabled value={config?.defaultValue as string || ""} className="block w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-400">
+                            <option value="">Choose</option>
                             {question.options.map((opt) => (
-                              <option key={opt.id}>{opt.value}</option>
+                              <option key={opt.id} value={opt.value}>{opt.value}</option>
                             ))}
                           </select>
                         )}

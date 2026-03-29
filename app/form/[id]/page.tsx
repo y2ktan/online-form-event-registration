@@ -142,6 +142,19 @@ export default function PublicFormPage() {
       }
       const theme = parseTheme(data.theme);
       setForm({ ...data, theme, sections });
+      // Initialize answers from defaultValue config
+      const defaults: Record<string, string> = {};
+      for (const sec of sections) {
+        for (const q of sec.questions) {
+          const cfg = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+          if (cfg?.defaultValue !== undefined && cfg.defaultValue !== "" && cfg.defaultValue !== "[]") {
+            defaults[q.id] = cfg.defaultValue as string;
+          }
+        }
+      }
+      if (Object.keys(defaults).length > 0) {
+        setAnswers((prev) => ({ ...defaults, ...prev }));
+      }
       // Load custom font @font-face if needed
       if (theme.fontFamily && !BUILT_IN_FONTS.has(theme.fontFamily)) {
         try {
