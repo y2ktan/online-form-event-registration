@@ -373,63 +373,64 @@ function SortableQuestion({
             {requiresOptions(question.type) && (
               <div className="space-y-2">
                 {question.options.map((opt, oIndex) => (
-                  <div
-                    key={opt.id}
-                    className="flex items-center gap-2"
-                  >
-                    {question.type === "MULTIPLE_CHOICE" && (
-                      <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
-                    )}
-                    {question.type === "CHECKBOX" && (
-                      <div className="h-4 w-4 rounded border-2 border-gray-300" />
-                    )}
-                    {question.type === "DROPDOWN" && (
-                      <span className="text-sm text-gray-400">
-                        {oIndex + 1}.
-                      </span>
-                    )}
-                    <input
-                      type="text"
-                      value={opt.value}
-                      onChange={(e) =>
-                        updateOption(sectionIndex, qIndex, oIndex, e.target.value)
-                      }
-                      className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-                    />
-                    {question.config?.routing?.enabled && (
-                      <select
-                        value={(question.config.routing as OptionMatchRouting).rules[opt.value] || "NEXT"}
-                        onChange={(e) => {
-                          const newConfig = { ...question.config };
-                          const routing = { ...(newConfig.routing as OptionMatchRouting) };
-                          routing.rules = { ...routing.rules };
-                          if (e.target.value === "NEXT") {
-                            delete routing.rules[opt.value];
-                          } else {
-                            routing.rules[opt.value] = e.target.value;
-                          }
-                          newConfig.routing = routing;
-                          updateQuestion(sectionIndex, qIndex, { config: newConfig });
-                        }}
-                        className="ml-2 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 focus:border-indigo-500 focus:outline-none max-w-[150px]"
+                  <div key={opt.id} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      {question.type === "MULTIPLE_CHOICE" && (
+                        <div className="h-4 w-4 shrink-0 rounded-full border-2 border-gray-300" />
+                      )}
+                      {question.type === "CHECKBOX" && (
+                        <div className="h-4 w-4 shrink-0 rounded border-2 border-gray-300" />
+                      )}
+                      {question.type === "DROPDOWN" && (
+                        <span className="text-sm text-gray-400 shrink-0">
+                          {oIndex + 1}.
+                        </span>
+                      )}
+                      <input
+                        type="text"
+                        value={opt.value}
+                        onChange={(e) =>
+                          updateOption(sectionIndex, qIndex, oIndex, e.target.value)
+                        }
+                        className="min-w-0 flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                      />
+                      <button
+                        onClick={() => removeOption(sectionIndex, qIndex, oIndex)}
+                        className="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
                       >
-                        <option value="NEXT">Continue to next section</option>
-                        <option value="SUBMIT">Submit form</option>
-                        {sections
-                          .filter((_, i) => i !== sectionIndex)
-                          .map((s) => (
-                            <option key={s.id} value={s.id}>
-                              Go to section: {s.title || `Section ${s.order + 1}`}
-                            </option>
-                          ))}
-                      </select>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {question.config?.routing?.enabled && (
+                      <div className="pl-6">
+                        <select
+                          value={(question.config.routing as OptionMatchRouting).rules[opt.value] || "NEXT"}
+                          onChange={(e) => {
+                            const newConfig = { ...question.config };
+                            const routing = { ...(newConfig.routing as OptionMatchRouting) };
+                            routing.rules = { ...routing.rules };
+                            if (e.target.value === "NEXT") {
+                              delete routing.rules[opt.value];
+                            } else {
+                              routing.rules[opt.value] = e.target.value;
+                            }
+                            newConfig.routing = routing;
+                            updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                          }}
+                          className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 focus:border-indigo-500 focus:outline-none"
+                        >
+                          <option value="NEXT">Continue to next section</option>
+                          <option value="SUBMIT">Submit form</option>
+                          {sections
+                            .filter((_, i) => i !== sectionIndex)
+                            .map((s) => (
+                              <option key={s.id} value={s.id}>
+                                Go to section: {s.title || `Section ${s.order + 1}`}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
                     )}
-                    <button
-                      onClick={() => removeOption(sectionIndex, qIndex, oIndex)}
-                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 ))}
                 {/* "Other" option row (non-editable label, removable) */}
