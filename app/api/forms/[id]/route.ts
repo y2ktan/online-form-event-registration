@@ -98,10 +98,92 @@ export async function PUT(
       data: updateData,
     });
 
+    // Helper: sanitize grid config
+    function sanitizeGridConfig(config: any) {
+      if (config.grid) {
+        if (Array.isArray(config.grid.rows)) {
+          config.grid.rows = config.grid.rows.map((r: any) => ({
+            ...r,
+            value: sanitize(r.value || ""),
+          }));
+        }
+        if (Array.isArray(config.grid.columns)) {
+          config.grid.columns = config.grid.columns.map((c: any) => ({
+            ...c,
+            value: sanitize(c.value || ""),
+          }));
+        }
+      }
+      return config;
+    }
+
+    // Helper: upsert a single question (update if exists, create if new)
+    async function upsertQuestion(
+      q: any,
+      sectionId: string,
+      existingIds: Set<string>,
+      keptIds: Set<string>
+    ) {
+      const config = sanitizeGridConfig(q.config || {});
+      const isExisting = !String(q.id).startsWith("temp-") && existingIds.has(q.id);
+
+      let questionId: string;
+      if (isExisting) {
+        // Update in place — preserves the ID and its answers
+        await prisma.option.deleteMany({ where: { questionId: q.id } });
+        await prisma.question.update({
+          where: { id: q.id },
+          data: {
+            sectionId,
+            type: sanitize(q.type),
+            label: sanitize(q.label),
+            isRequired: Boolean(q.isRequired),
+            order: Number(q.order),
+            config: JSON.stringify(config),
+          },
+        });
+        questionId = q.id;
+      } else {
+        const created = await prisma.question.create({
+          data: {
+            formId: id,
+            sectionId,
+            type: sanitize(q.type),
+            label: sanitize(q.label),
+            isRequired: Boolean(q.isRequired),
+            order: Number(q.order),
+            config: JSON.stringify(config),
+          },
+        });
+        questionId = created.id;
+      }
+      keptIds.add(questionId);
+
+      if (q.options && Array.isArray(q.options)) {
+        for (const opt of q.options) {
+          await prisma.option.create({
+            data: {
+              questionId,
+              value: sanitize(opt.value),
+              order: Number(opt.order),
+              group: opt.group || "default",
+            },
+          });
+        }
+      }
+    }
+
     // Update sections if provided
     if (body.sections && Array.isArray(body.sections)) {
-      // Delete old sections (cascades to questions in those sections)
-      await prisma.question.deleteMany({ where: { formId: id } });
+      // Gather existing question IDs so we know which to update vs create
+      const existingQuestions = await prisma.question.findMany({
+        where: { formId: id },
+        select: { id: true },
+      });
+      const existingIds = new Set(existingQuestions.map((q: { id: string }) => q.id));
+      const keptIds = new Set<string>();
+
+      // Delete old sections (questions get sectionId=null via SetNull, NOT deleted)
       await prisma.section.deleteMany({ where: { formId: id } });
 
       for (const s of body.sections) {
@@ -117,52 +199,24 @@ export async function PUT(
 
         if (s.questions && Array.isArray(s.questions)) {
           for (const q of s.questions) {
-            const config = q.config || {};
-            if (config.grid) {
-              if (Array.isArray(config.grid.rows)) {
-                config.grid.rows = config.grid.rows.map((r: any) => ({
-                  ...r,
-                  value: sanitize(r.value || ""),
-                }));
-              }
-              if (Array.isArray(config.grid.columns)) {
-                config.grid.columns = config.grid.columns.map((c: any) => ({
-                  ...c,
-                  value: sanitize(c.value || ""),
-                }));
-              }
-            }
-
-            const question = await prisma.question.create({
-              data: {
-                formId: id,
-                sectionId: section.id,
-                type: sanitize(q.type),
-                label: sanitize(q.label),
-                isRequired: Boolean(q.isRequired),
-                order: Number(q.order),
-                config: JSON.stringify(config),
-              },
-            });
-
-            if (q.options && Array.isArray(q.options)) {
-              for (const opt of q.options) {
-                await prisma.option.create({
-                  data: {
-                    questionId: question.id,
-                    value: sanitize(opt.value),
-                    order: Number(opt.order),
-                    group: opt.group || "default",
-                  },
-                });
-              }
-            }
+            await upsertQuestion(q, section.id, existingIds, keptIds);
           }
         }
       }
+
+      // Delete only questions that were actually removed from the form
+      const removedIds = [...existingIds].filter((qid) => !keptIds.has(qid));
+      if (removedIds.length > 0) {
+        await prisma.question.deleteMany({ where: { id: { in: removedIds } } });
+      }
     } else if (body.questions && Array.isArray(body.questions)) {
       // Legacy: questions without sections (backwards compat)
-      await prisma.question.deleteMany({ where: { formId: id } });
+      const existingQuestions = await prisma.question.findMany({
+        where: { formId: id },
+        select: { id: true },
+      });
+      const existingIds = new Set(existingQuestions.map((q: { id: string }) => q.id));
+      const keptIds = new Set<string>();
 
       // Ensure at least one section exists
       let section = await prisma.section.findFirst({ where: { formId: id }, orderBy: { order: "asc" } });
@@ -173,46 +227,12 @@ export async function PUT(
       }
 
       for (const q of body.questions) {
-        const config = q.config || {};
-        if (config.grid) {
-          if (Array.isArray(config.grid.rows)) {
-            config.grid.rows = config.grid.rows.map((r: any) => ({
-              ...r,
-              value: sanitize(r.value || ""),
-            }));
-          }
-          if (Array.isArray(config.grid.columns)) {
-            config.grid.columns = config.grid.columns.map((c: any) => ({
-              ...c,
-              value: sanitize(c.value || ""),
-            }));
-          }
-        }
+        await upsertQuestion(q, section.id, existingIds, keptIds);
+      }
 
-        const question = await prisma.question.create({
-          data: {
-            formId: id,
-            sectionId: section.id,
-            type: sanitize(q.type),
-            label: sanitize(q.label),
-            isRequired: Boolean(q.isRequired),
-            order: Number(q.order),
-            config: JSON.stringify(config),
-          },
-        });
-
-        if (q.options && Array.isArray(q.options)) {
-          for (const opt of q.options) {
-            await prisma.option.create({
-              data: {
-                questionId: question.id,
-                value: sanitize(opt.value),
-                order: Number(opt.order),
-                group: opt.group || "default",
-              },
-            });
-          }
-        }
+      const removedIds = [...existingIds].filter((qid) => !keptIds.has(qid));
+      if (removedIds.length > 0) {
+        await prisma.question.deleteMany({ where: { id: { in: removedIds } } });
       }
     }
 
