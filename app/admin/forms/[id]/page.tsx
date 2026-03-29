@@ -1116,11 +1116,13 @@ export default function FormBuilderPage() {
             theme: serializeTheme(form.theme),
             notifyEmails: form.notifyEmails,
             sections: form.sections.map((s) => ({
+              id: s.id,
               title: s.title,
               description: s.description,
               order: s.order,
               routingConfig: s.routingConfig,
               questions: s.questions.map((q) => ({
+                id: q.id,
                 type: q.type,
                 label: q.label,
                 isRequired: q.isRequired,
@@ -1136,6 +1138,45 @@ export default function FormBuilderPage() {
           }),
         });
         if (res.ok) {
+          const saved = await res.json();
+          // Build temp→real ID mapping from the saved response
+          const idMap: Record<string, string> = {};
+          const savedSections = saved.sections || [];
+          form.sections.forEach((ls, si) => {
+            const ss = savedSections[si];
+            if (!ss) return;
+            if (ls.id !== ss.id) idMap[ls.id] = ss.id;
+            const serverQs = ss.questions || [];
+            (ls.questions || []).forEach((lq: any, qi: number) => {
+              const sq = serverQs[qi];
+              if (sq && lq.id !== sq.id) idMap[lq.id] = sq.id;
+            });
+          });
+          if (Object.keys(idMap).length > 0) {
+            undoRedoRef.current = true;
+            setForm((prev) => {
+              if (!prev) return prev;
+              const mapped = {
+                ...prev,
+                sections: prev.sections.map((s) => ({
+                  ...s,
+                  id: idMap[s.id] || s.id,
+                  questions: s.questions.map((q) => {
+                    let cfg = { ...q.config };
+                    if (cfg.routing?.enabled && (cfg.routing as any).rules) {
+                      const r = { ...(cfg.routing as any), rules: { ...(cfg.routing as any).rules } };
+                      for (const [optVal, target] of Object.entries(r.rules)) {
+                        if (idMap[target as string]) r.rules[optVal] = idMap[target as string];
+                      }
+                      cfg = { ...cfg, routing: r };
+                    }
+                    return { ...q, id: idMap[q.id] || q.id, config: cfg };
+                  }),
+                })),
+              };
+              return mapped;
+            });
+          }
           setSaveStatus("saved");
         } else {
           setSaveStatus("error");
@@ -1324,15 +1365,20 @@ export default function FormBuilderPage() {
   function addSection() {
     if (!form) return;
     pushHistoryNow();
+    const insertAt = activeSectionIndex + 1;
     const newSection: SectionData = {
       id: tempId(),
       title: `Section ${form.sections.length + 1}`,
       description: "",
-      order: form.sections.length,
+      order: insertAt,
       routingConfig: {},
       questions: [],
     };
-    setForm({ ...form, sections: [...form.sections, newSection] });
+    const newSections = [...form.sections];
+    newSections.splice(insertAt, 0, newSection);
+    newSections.forEach((s, i) => (s.order = i));
+    setForm({ ...form, sections: newSections });
+    setActiveSectionIndex(insertAt);
   }
 
   function updateSection(sectionIndex: number, updates: Partial<SectionData>) {

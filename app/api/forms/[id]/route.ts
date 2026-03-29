@@ -175,39 +175,65 @@ export async function PUT(
 
     // Update sections if provided
     if (body.sections && Array.isArray(body.sections)) {
-      // Gather existing question IDs so we know which to update vs create
+      // Gather existing IDs so we know which to update vs create
       const existingQuestions = await prisma.question.findMany({
         where: { formId: id },
         select: { id: true },
       });
-      const existingIds = new Set(existingQuestions.map((q: { id: string }) => q.id));
-      const keptIds = new Set<string>();
+      const existingQIds = new Set(existingQuestions.map((q: { id: string }) => q.id));
+      const keptQIds = new Set<string>();
 
-      // Delete old sections (questions get sectionId=null via SetNull, NOT deleted)
-      await prisma.section.deleteMany({ where: { formId: id } });
+      const existingSections = await prisma.section.findMany({
+        where: { formId: id },
+        select: { id: true },
+      });
+      const existingSIds = new Set(existingSections.map((s: { id: string }) => s.id));
+      const keptSIds = new Set<string>();
 
       for (const s of body.sections) {
-        const section = await prisma.section.create({
-          data: {
-            formId: id,
-            title: sanitize(s.title || "Untitled Section"),
-            description: sanitize(s.description || ""),
-            order: Number(s.order),
-            routingConfig: JSON.stringify(s.routingConfig || {}),
-          },
-        });
+        const isExistingSection = !String(s.id).startsWith("temp-") && existingSIds.has(s.id);
+        let sectionId: string;
+
+        if (isExistingSection) {
+          await prisma.section.update({
+            where: { id: s.id },
+            data: {
+              title: sanitize(s.title || "Untitled Section"),
+              description: sanitize(s.description || ""),
+              order: Number(s.order),
+              routingConfig: JSON.stringify(s.routingConfig || {}),
+            },
+          });
+          sectionId = s.id;
+        } else {
+          const created = await prisma.section.create({
+            data: {
+              formId: id,
+              title: sanitize(s.title || "Untitled Section"),
+              description: sanitize(s.description || ""),
+              order: Number(s.order),
+              routingConfig: JSON.stringify(s.routingConfig || {}),
+            },
+          });
+          sectionId = created.id;
+        }
+        keptSIds.add(sectionId);
 
         if (s.questions && Array.isArray(s.questions)) {
           for (const q of s.questions) {
-            await upsertQuestion(q, section.id, existingIds, keptIds);
+            await upsertQuestion(q, sectionId, existingQIds, keptQIds);
           }
         }
       }
 
-      // Delete only questions that were actually removed from the form
-      const removedIds = [...existingIds].filter((qid) => !keptIds.has(qid));
-      if (removedIds.length > 0) {
-        await prisma.question.deleteMany({ where: { id: { in: removedIds } } });
+      // Delete only sections/questions that were actually removed
+      const removedQIds = [...existingQIds].filter((qid) => !keptQIds.has(qid));
+      if (removedQIds.length > 0) {
+        await prisma.question.deleteMany({ where: { id: { in: removedQIds } } });
+      }
+      const removedSIds = [...existingSIds].filter((sid) => !keptSIds.has(sid));
+      if (removedSIds.length > 0) {
+        await prisma.section.deleteMany({ where: { id: { in: removedSIds } } });
       }
     } else if (body.questions && Array.isArray(body.questions)) {
       // Legacy: questions without sections (backwards compat)
