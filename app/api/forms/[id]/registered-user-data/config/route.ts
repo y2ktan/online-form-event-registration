@@ -31,6 +31,7 @@ export async function GET(
 
   return NextResponse.json({
     lookupColumn: data.lookupColumn,
+    lookupQuestionId: data.lookupQuestionId || null,
     mappings: JSON.parse(data.mappings),
   });
 }

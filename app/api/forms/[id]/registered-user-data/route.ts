@@ -39,6 +39,7 @@ export async function GET(
       rowCount: rows.length,
       firstRow: rows[0] || null,
       lookupColumn: data.lookupColumn,
+      lookupQuestionId: data.lookupQuestionId || "",
       mappings: JSON.parse(data.mappings),
     });
   } catch (err) {
@@ -198,6 +199,9 @@ export async function PUT(
     if (typeof body.lookupColumn === "string") {
       updateData.lookupColumn = body.lookupColumn;
     }
+    if (typeof body.lookupQuestionId === "string") {
+      updateData.lookupQuestionId = body.lookupQuestionId;
+    }
     if (body.mappings && typeof body.mappings === "object") {
       updateData.mappings = JSON.stringify(body.mappings);
     }
@@ -215,6 +219,7 @@ export async function PUT(
       rowCount: rows.length,
       firstRow: rows[0] || null,
       lookupColumn: data.lookupColumn,
+      lookupQuestionId: data.lookupQuestionId || "",
       mappings: JSON.parse(data.mappings),
     });
   } catch (err) {

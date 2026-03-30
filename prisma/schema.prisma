@@ -146,8 +146,9 @@ model RegisteredUserData {
   form         Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
   headers      String   @default("[]")   // JSON array of column names
   rows         String   @default("[]")   // JSON array of row objects
-  lookupColumn String   @default("")     // Column name used for lookup matching
-  mappings     String   @default("{}")   // JSON: { questionId: columnName }
+  lookupColumn     String   @default("")     // Column name used for lookup matching
+  lookupQuestionId String   @default("")     // Question ID that serves as the lookup key input
+  mappings         String   @default("{}")   // JSON: { questionId: columnName }
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

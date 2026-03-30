@@ -9,7 +9,6 @@ import {
   QrCode, 
   Copy, 
   Check, 
-  AlertCircle, 
   Phone, 
   Camera, 
   X 
@@ -117,6 +116,9 @@ export default function PublicFormPage() {
     lookupQuestionId: string | null;
   } | null>(null);
   const [regUserLookedUp, setRegUserLookedUp] = useState(false);
+  const [regUserLookupLoading, setRegUserLookupLoading] = useState(false);
+  const [regUserLookupResult, setRegUserLookupResult] = useState<"idle" | "found" | "not_found">("idle");
+  const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -192,31 +194,55 @@ export default function PublicFormPage() {
         if (!res.ok) return;
         const cfg = await res.json();
         if (!cfg || !cfg.lookupColumn) return;
-        // Find which questionId is mapped to the lookupColumn
         const mappings: Record<string, string> = cfg.mappings || {};
-        let lookupQId: string | null = null;
-        for (const [qId, colName] of Object.entries(mappings)) {
-          if (colName === cfg.lookupColumn) {
-            lookupQId = qId;
-            break;
-          }
-        }
-        setRegUserConfig({ lookupColumn: cfg.lookupColumn, mappings, lookupQuestionId: lookupQId });
+        setRegUserConfig({ lookupColumn: cfg.lookupColumn, mappings, lookupQuestionId: cfg.lookupQuestionId || null });
       } catch { /* ignore */ }
     })();
   }, [form, formId]);
 
   async function regUserLookup(key: string) {
     if (!key.trim() || !regUserConfig) return;
+    setRegUserLookupLoading(true);
+    setRegUserLookupResult("idle");
     try {
       const res = await fetch(`/api/forms/${formId}/registered-user-lookup?key=${encodeURIComponent(key.trim())}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Clear previously auto-filled fields silently
+        clearAutoFilledFields();
+        setRegUserLookupResult("idle");
+        setRegUserLookupLoading(false);
+        return;
+      }
       const data = await res.json();
       if (data.found && data.values) {
         setAnswers((prev) => ({ ...prev, ...data.values }));
+        setAutoFilledFields(new Set(Object.keys(data.values)));
         setRegUserLookedUp(true);
+        setRegUserLookupResult("found");
+      } else {
+        clearAutoFilledFields();
+        setRegUserLookupResult("idle");
       }
-    } catch { /* ignore */ }
+    } catch {
+      clearAutoFilledFields();
+      setRegUserLookupResult("idle");
+    } finally {
+      setRegUserLookupLoading(false);
+    }
+  }
+
+  function clearAutoFilledFields() {
+    if (autoFilledFields.size > 0) {
+      setAnswers((prev) => {
+        const next = { ...prev };
+        for (const qId of autoFilledFields) {
+          next[qId] = "";
+        }
+        return next;
+      });
+      setAutoFilledFields(new Set());
+      setRegUserLookedUp(false);
+    }
   }
 
   function updateAnswer(questionId: string, value: string) {
@@ -727,30 +753,54 @@ export default function PublicFormPage() {
               );
             }
             return (
-            <div key={question.id} className="bg-white p-4 shadow-sm sm:p-6" style={{ borderRadius: themeVars["--theme-radius"] }}>
+            <div key={question.id} className={`p-4 shadow-sm sm:p-6 ${autoFilledFields.has(question.id) && regUserConfig?.lookupQuestionId !== question.id ? "bg-green-50 ring-1 ring-green-200" : "bg-white"}`} style={{ borderRadius: themeVars["--theme-radius"] }}>
               <label className="block text-base font-medium text-gray-900">
                 {question.label}
                 {question.isRequired && (
                   <span className="text-red-500"> *</span>
                 )}
+                {autoFilledFields.has(question.id) && regUserConfig?.lookupQuestionId !== question.id && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                    <CheckCircle className="h-3 w-3" /> Auto-filled
+                  </span>
+                )}
               </label>
 
               <div className="mt-3">
                 {question.type === "SHORT_TEXT" && (
-                  <input
-                    type="text"
-                    value={answers[question.id] || ""}
-                    onChange={(e) =>
-                      updateAnswer(question.id, e.target.value)
-                    }
-                    onBlur={(e) => {
-                      if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
-                        regUserLookup(e.target.value);
-                      }
-                    }}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    placeholder="Your answer"
-                  />
+                  <div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={answers[question.id] || ""}
+                        onChange={(e) =>
+                          updateAnswer(question.id, e.target.value)
+                        }
+                        onBlur={(e) => {
+                          if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
+                            regUserLookup(e.target.value);
+                          }
+                        }}
+                        className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder={regUserConfig?.lookupQuestionId === question.id ? `Enter your ${regUserConfig.lookupColumn}` : "Your answer"}
+                      />
+                      {regUserConfig?.lookupQuestionId === question.id && regUserLookupLoading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                        </div>
+                      )}
+                    </div>
+                    {regUserConfig?.lookupQuestionId === question.id && (
+                      <div className="mt-1.5">
+                        {regUserLookupResult === "found" && (
+                          <p className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3.5 w-3.5" /> Profile found — fields auto-filled.</p>
+                        )}
+                        {regUserLookupResult === "idle" && !regUserLookupLoading && (
+                          <p className="text-xs text-gray-400">Enter your {regUserConfig.lookupColumn} and click outside to look up your profile.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {question.type === "PARAGRAPH" && (
@@ -885,23 +935,35 @@ export default function PublicFormPage() {
                 })()}
 
                 {question.type === "DROPDOWN" && (
-                  <select
-                    value={answers[question.id] || ""}
-                    onChange={(e) => {
-                      updateAnswer(question.id, e.target.value);
-                      if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
-                        regUserLookup(e.target.value);
-                      }
-                    }}
-                    className={`block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${answers[question.id] ? "text-gray-900" : "text-gray-400"}`}
-                  >
-                    <option value="" disabled className="text-gray-400">Choose</option>
-                    {question.options.map((opt) => (
-                      <option key={opt.id} value={opt.value}>
-                        {opt.value}
-                      </option>
-                    ))}
-                  </select>
+                  <div>
+                    <select
+                      value={answers[question.id] || ""}
+                      onChange={(e) => {
+                        updateAnswer(question.id, e.target.value);
+                        if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
+                          regUserLookup(e.target.value);
+                        }
+                      }}
+                      className={`block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${answers[question.id] ? "text-gray-900" : "text-gray-400"}`}
+                    >
+                      <option value="" disabled className="text-gray-400">{regUserConfig?.lookupQuestionId === question.id ? `Select your ${regUserConfig.lookupColumn}` : "Choose"}</option>
+                      {question.options.map((opt) => (
+                        <option key={opt.id} value={opt.value}>
+                          {opt.value}
+                        </option>
+                      ))}
+                    </select>
+                    {regUserConfig?.lookupQuestionId === question.id && (
+                      <div className="mt-1.5">
+                        {regUserLookupLoading && (
+                          <p className="flex items-center gap-1 text-xs text-indigo-600"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /> Looking up profile…</p>
+                        )}
+                        {regUserLookupResult === "found" && (
+                          <p className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3.5 w-3.5" /> Profile found — fields auto-filled.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {question.type === "LINEAR_SCALE" && (

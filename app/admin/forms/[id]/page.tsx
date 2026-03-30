@@ -1024,6 +1024,7 @@ export default function FormBuilderPage() {
     rowCount: number;
     firstRow: Record<string, string> | null;
     lookupColumn: string;
+    lookupQuestionId: string;
     mappings: Record<string, string>;
   } | null>(null);
   const [regUserLoading, setRegUserLoading] = useState(false);
@@ -1509,7 +1510,7 @@ export default function FormBuilderPage() {
     setRegUserUploading(false);
   }
 
-  async function updateRegUserConfig(updates: { lookupColumn?: string; mappings?: Record<string, string> }) {
+  async function updateRegUserConfig(updates: { lookupColumn?: string; lookupQuestionId?: string; mappings?: Record<string, string> }) {
     if (!regUserData) return;
     try {
       const res = await fetch(`/api/forms/${formId}/registered-user-data`, {
@@ -2620,6 +2621,26 @@ export default function FormBuilderPage() {
                     ))}
                   </select>
                 </div>
+
+                {/* Lookup Question */}
+                {regUserData.lookupColumn && form && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Lookup Question</label>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Which form question should the user type their lookup key into? (e.g., the &quot;IC Number&quot; question)
+                    </p>
+                    <select
+                      value={regUserData.lookupQuestionId}
+                      onChange={(e) => updateRegUserConfig({ lookupQuestionId: e.target.value })}
+                      className="block w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="">— Select question —</option>
+                      {form.sections.flatMap((s) => s.questions).filter((q) => !q.config?.isTitle && !q.config?.isPhoneNumber && q.label?.trim()).map((q) => (
+                        <option key={q.id} value={q.id}>{q.label} ({q.type})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Mapping summary & auto-match */}
                 {regUserData.lookupColumn && form && (
