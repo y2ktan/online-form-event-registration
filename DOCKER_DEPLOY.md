@@ -117,6 +117,40 @@ docker run --rm \
 | Prisma seed loop in logs | Container running init image with `--restart` | Stop, remove, re-run with `latest` (runner) image |
 | Uploads lost after update | Missing upload volume | Add `-v ai-form-registration_uploads:/app/public/uploads` |
 | DB not updated after deploy | Schema changes not applied | Run the `init` container (step 4 in release) |
+| 413 Request Entity Too Large | Nginx/reverse proxy body size limit (default 1MB) | Add `client_max_body_size 10m;` to your Nginx config (see below) |
+
+### Fix: 413 Request Entity Too Large
+
+The 413 error means your reverse proxy (Nginx) is blocking the request because it's too large. **Do not overwrite your entire config file with just one line.** 
+
+A valid Nginx configuration must have a `server` block. Here is a complete example for `/etc/nginx/sites-available/vword.net`:
+
+```nginx
+server {
+    listen 80;
+    server_name vword.net;
+
+    # Increase upload limit (must be inside server or location block)
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+**Steps to fix:**
+1. Edit the file: `sudo nano /etc/nginx/sites-available/vword.net`
+2. Replace the content with the full block above (adjust `server_name` and `proxy_pass` port if needed).
+3. Test config: `sudo nginx -t`
+4. Reload Nginx: `sudo systemctl reload nginx`
 
 **Logs**: `docker logs ai-form-registration`
 **Volume Info**: `docker volume ls`

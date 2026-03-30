@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { ensureRegisteredUserDataTable } from "../registered-user-data/_ensure-table";
 
 // GET /api/forms/[id]/registered-user-lookup?key=VALUE
 // Public endpoint — looks up a registered user row by the configured lookup column
@@ -21,6 +22,7 @@ export async function GET(
     return NextResponse.json({ error: "Missing key parameter." }, { status: 400 });
   }
 
+  await ensureRegisteredUserDataTable();
   const data = await (prisma as any).registeredUserData.findUnique({ where: { formId: id } });
   if (!data || !data.lookupColumn) {
     return NextResponse.json({ error: "User profile lookup not configured." }, { status: 404 });

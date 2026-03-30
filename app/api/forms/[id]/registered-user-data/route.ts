@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, canEditForm } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import * as XLSX from "xlsx";
+import { ensureRegisteredUserDataTable } from "./_ensure-table";
 
 // GET — fetch current registered user data config for a form
 export async function GET(
@@ -26,12 +27,16 @@ export async function GET(
   }
 
   try {
+    await ensureRegisteredUserDataTable();
+    console.log(`[API] Fetching registered user data for form: ${id}`);
     const data = await (prisma as any).registeredUserData.findUnique({ where: { formId: id } });
     if (!data) {
+      console.log(`[API] No registered user data found for form: ${id}`);
       return NextResponse.json(null);
     }
 
     const rows: Record<string, string>[] = JSON.parse(data.rows);
+    console.log(`[API] Found ${rows.length} rows for form: ${id}`);
 
     return NextResponse.json({
       id: data.id,
@@ -54,45 +59,59 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  console.log(`[API] POST registered-user-data for form: ${id}`);
+  
   const ip = request.headers.get("x-forwarded-for") || "unknown";
   const { allowed } = checkRateLimit(`reg-user-data:${ip}`);
   if (!allowed) {
+    console.warn(`[API] Rate limit exceeded for IP: ${ip}`);
     return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
   }
 
   const session = await getSession();
   if (!session) {
+    console.warn("[API] Unauthorized access attempt (no session)");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const hasAccess = await canEditForm(session.userId, session.role, id);
   if (!hasAccess) {
+    console.warn(`[API] Unauthorized access attempt for user ${session.userId} on form ${id}`);
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
   // Verify form exists
   const form = await prisma.form.findUnique({ where: { id }, select: { id: true } });
   if (!form) {
+    console.warn(`[API] Form not found: ${id}`);
     return NextResponse.json({ error: "Form not found." }, { status: 404 });
   }
 
   try {
+    await ensureRegisteredUserDataTable();
+    console.log("[API] Parsing form data...");
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     if (!file) {
+      console.warn("[API] No file found in request");
       return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
     }
 
+    console.log(`[API] Received file: ${file.name}, size: ${file.size} bytes`);
     const buffer = Buffer.from(await file.arrayBuffer());
+    console.log("[API] File read into buffer, parsing XLSX...");
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     if (!sheetName) {
+      console.warn("[API] XLSX file has no sheets");
       return NextResponse.json({ error: "XLSX file has no sheets." }, { status: 400 });
     }
 
     const sheet = workbook.Sheets[sheetName];
+    console.log(`[API] Processing sheet: ${sheetName}`);
 
     // Read as raw 2D array to auto-detect the real header row
     const rawRows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    console.log(`[API] Total raw rows found: ${rawRows.length}`);
     if (rawRows.length < 2) {
       return NextResponse.json({ error: "XLSX file has no data rows." }, { status: 400 });
     }
@@ -107,14 +126,17 @@ export async function POST(
         break;
       }
     }
+    console.log(`[API] Detected header row at index: ${headerRowIdx}`);
 
     const headers: string[] = rawRows[headerRowIdx]
       .map((c) => String(c ?? "").trim())
       .filter((h) => h !== "");
 
     if (headers.length === 0) {
+      console.warn("[API] Could not detect column headers");
       return NextResponse.json({ error: "Could not detect column headers." }, { status: 400 });
     }
+    console.log(`[API] Detected headers: ${headers.join(", ")}`);
 
     // Convert data rows (after header row) into objects
     const rows: Record<string, string>[] = [];
@@ -130,11 +152,13 @@ export async function POST(
       rows.push(cleaned);
     }
 
+    console.log(`[API] Parsed ${rows.length} data rows`);
     if (rows.length === 0) {
       return NextResponse.json({ error: "XLSX file has no data rows." }, { status: 400 });
     }
 
     // Upsert: replace if exists, create if not
+    console.log("[API] Upserting data into database...");
     const data = await (prisma as any).registeredUserData.upsert({
       where: { formId: id },
       update: {
@@ -151,6 +175,7 @@ export async function POST(
         mappings: "{}",
       },
     });
+    console.log(`[API] Successfully saved data. ID: ${data.id}`);
 
     return NextResponse.json({
       id: data.id,
@@ -186,6 +211,10 @@ export async function PUT(
   if (!hasAccess) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
+
+  try {
+    await ensureRegisteredUserDataTable();
+  } catch (_) { /* ensured in helper */ }
 
   const existing = await (prisma as any).registeredUserData.findUnique({ where: { formId: id } });
   if (!existing) {
@@ -248,6 +277,10 @@ export async function DELETE(
   if (!hasAccess) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
+
+  try {
+    await ensureRegisteredUserDataTable();
+  } catch (_) { /* ensured in helper */ }
 
   const existing = await (prisma as any).registeredUserData.findUnique({ where: { formId: id } });
   if (!existing) {

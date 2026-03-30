@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { ensureRegisteredUserDataTable } from "../_ensure-table";
 
 // GET /api/forms/[id]/registered-user-data/config
 // Public endpoint — returns only lookupColumn and mappings (no rows or headers)
@@ -24,6 +25,7 @@ export async function GET(
     return NextResponse.json(null, { status: 404 });
   }
 
+  await ensureRegisteredUserDataTable();
   const data = await (prisma as any).registeredUserData.findUnique({ where: { formId: id } });
   if (!data || !data.lookupColumn) {
     return NextResponse.json(null, { status: 404 });

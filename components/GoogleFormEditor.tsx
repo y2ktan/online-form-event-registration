@@ -23,23 +23,27 @@ interface GoogleFormEditorProps {
   placeholder?: string;
 }
 
+const extensions = [
+  StarterKit.configure({
+    heading: false,
+    codeBlock: false,
+    code: false,
+    blockquote: false,
+    horizontalRule: false,
+    hardBreak: false,
+  }),
+  Underline,
+  Link.configure({
+    openOnClick: false,
+    HTMLAttributes: { target: "_blank", rel: "noopener noreferrer" },
+  }),
+];
+
 function GoogleFormEditorInner({ value, onChange, placeholder = "Description (optional)" }: GoogleFormEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({
-        heading: false,
-        codeBlock: false,
-        code: false,
-        blockquote: false,
-        horizontalRule: false,
-        hardBreak: false,
-      }),
-      Underline,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { target: "_blank", rel: "noopener noreferrer" },
-      }),
+      ...extensions,
       Placeholder.configure({ placeholder }),
     ],
     content: value || "",
