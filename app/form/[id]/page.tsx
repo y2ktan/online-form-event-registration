@@ -114,6 +114,8 @@ export default function PublicFormPage() {
     lookupColumn: string;
     mappings: Record<string, string>;
     lookupQuestionId: string | null;
+    secondaryLookupColumn: string;
+    secondaryLookupQuestionId: string | null;
   } | null>(null);
   const [regUserLookedUp, setRegUserLookedUp] = useState(false);
   const [regUserLookupLoading, setRegUserLookupLoading] = useState(false);
@@ -195,17 +197,25 @@ export default function PublicFormPage() {
         const cfg = await res.json();
         if (!cfg || !cfg.lookupColumn) return;
         const mappings: Record<string, string> = cfg.mappings || {};
-        setRegUserConfig({ lookupColumn: cfg.lookupColumn, mappings, lookupQuestionId: cfg.lookupQuestionId || null });
+        setRegUserConfig({ lookupColumn: cfg.lookupColumn, mappings, lookupQuestionId: cfg.lookupQuestionId || null, secondaryLookupColumn: cfg.secondaryLookupColumn || "", secondaryLookupQuestionId: cfg.secondaryLookupQuestionId || null });
       } catch { /* ignore */ }
     })();
   }, [form, formId]);
 
-  async function regUserLookup(key: string) {
+  async function regUserLookup(key: string, secondaryKey?: string) {
     if (!key.trim() || !regUserConfig) return;
+    // If secondary verification is configured, both fields must be provided
+    if (regUserConfig.secondaryLookupColumn && regUserConfig.secondaryLookupQuestionId) {
+      if (!secondaryKey?.trim()) return;
+    }
     setRegUserLookupLoading(true);
     setRegUserLookupResult("idle");
     try {
-      const res = await fetch(`/api/forms/${formId}/registered-user-lookup?key=${encodeURIComponent(key.trim())}`);
+      let url = `/api/forms/${formId}/registered-user-lookup?key=${encodeURIComponent(key.trim())}`;
+      if (secondaryKey?.trim()) {
+        url += `&secondaryKey=${encodeURIComponent(secondaryKey.trim())}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) {
         // Clear previously auto-filled fields silently
         clearAutoFilledFields();
@@ -767,7 +777,24 @@ export default function PublicFormPage() {
               </label>
 
               <div className="mt-3">
-                {question.type === "SHORT_TEXT" && (
+                {question.type === "SHORT_TEXT" && (() => {
+                  const isPrimaryLookup = regUserConfig?.lookupQuestionId === question.id;
+                  const isSecondaryLookup = regUserConfig?.secondaryLookupQuestionId === question.id;
+                  const isLookupField = isPrimaryLookup || isSecondaryLookup;
+                  const hasSecondary = !!(regUserConfig?.secondaryLookupColumn && regUserConfig?.secondaryLookupQuestionId);
+
+                  const handleLookupBlur = (val: string) => {
+                    if (!regUserConfig || !val) return;
+                    if (isPrimaryLookup) {
+                      const secVal = hasSecondary ? (answers[regUserConfig.secondaryLookupQuestionId!] || "") : undefined;
+                      regUserLookup(val, secVal);
+                    } else if (isSecondaryLookup) {
+                      const priVal = answers[regUserConfig.lookupQuestionId!] || "";
+                      if (priVal) regUserLookup(priVal, val);
+                    }
+                  };
+
+                  return (
                   <div>
                     <div className="relative">
                       <input
@@ -776,32 +803,38 @@ export default function PublicFormPage() {
                         onChange={(e) =>
                           updateAnswer(question.id, e.target.value)
                         }
-                        onBlur={(e) => {
-                          if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
-                            regUserLookup(e.target.value);
-                          }
-                        }}
+                        onBlur={(e) => handleLookupBlur(e.target.value)}
                         className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        placeholder={regUserConfig?.lookupQuestionId === question.id ? `Enter your ${regUserConfig.lookupColumn}` : "Your answer"}
+                        placeholder={isPrimaryLookup ? `Enter your ${regUserConfig!.lookupColumn}` : isSecondaryLookup ? `Enter your ${regUserConfig!.secondaryLookupColumn}` : "Your answer"}
                       />
-                      {regUserConfig?.lookupQuestionId === question.id && regUserLookupLoading && (
+                      {isLookupField && regUserLookupLoading && (
                         <div className="absolute right-3 top-1/2 -translate-y-1/2">
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
                         </div>
                       )}
                     </div>
-                    {regUserConfig?.lookupQuestionId === question.id && (
+                    {isPrimaryLookup && (
                       <div className="mt-1.5">
                         {regUserLookupResult === "found" && (
                           <p className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3.5 w-3.5" /> Profile found — fields auto-filled.</p>
                         )}
                         {regUserLookupResult === "idle" && !regUserLookupLoading && (
-                          <p className="text-xs text-gray-400">Enter your {regUserConfig.lookupColumn} and click outside to look up your profile.</p>
+                          <p className="text-xs text-gray-400">
+                            Enter your {regUserConfig!.lookupColumn}{hasSecondary ? ` and ${regUserConfig!.secondaryLookupColumn}` : ""} and click outside to look up your profile.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {isSecondaryLookup && (
+                      <div className="mt-1.5">
+                        {regUserLookupResult === "idle" && !regUserLookupLoading && (
+                          <p className="text-xs text-gray-400">Used for profile verification.</p>
                         )}
                       </div>
                     )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {question.type === "PARAGRAPH" && (
                   <textarea

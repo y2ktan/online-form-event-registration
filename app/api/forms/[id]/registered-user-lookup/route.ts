@@ -28,14 +28,29 @@ export async function GET(
     return NextResponse.json({ error: "User profile lookup not configured." }, { status: 404 });
   }
 
+  const secondaryCol = data.secondaryLookupColumn || "";
+  const secondaryKey = request.nextUrl.searchParams.get("secondaryKey")?.trim();
+
+  // If secondary verification is configured, require the secondary key
+  if (secondaryCol) {
+    if (!secondaryKey) {
+      return NextResponse.json({ error: "Missing secondary verification." }, { status: 400 });
+    }
+  }
+
   const rows: Record<string, string>[] = JSON.parse(data.rows);
   const mappings: Record<string, string> = JSON.parse(data.mappings);
   const lookupCol = data.lookupColumn;
 
-  // Find matching row (case-insensitive)
-  const match = rows.find(
-    (row) => row[lookupCol]?.toLowerCase() === key.toLowerCase()
-  );
+  // Find matching row (case-insensitive) — must match both primary and secondary (if configured)
+  const match = rows.find((row) => {
+    const primaryMatch = row[lookupCol]?.toLowerCase() === key.toLowerCase();
+    if (!primaryMatch) return false;
+    if (secondaryCol && secondaryKey) {
+      return row[secondaryCol]?.toLowerCase() === secondaryKey.toLowerCase();
+    }
+    return true;
+  });
 
   if (!match) {
     return NextResponse.json({ found: false, values: {} });

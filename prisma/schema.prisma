@@ -148,6 +148,8 @@ model RegisteredUserData {
   rows         String   @default("[]")   // JSON array of row objects
   lookupColumn     String   @default("")     // Column name used for lookup matching
   lookupQuestionId String   @default("")     // Question ID that serves as the lookup key input
+  secondaryLookupColumn     String @default("")  // Optional second column for verification (anti-brute-force)
+  secondaryLookupQuestionId String @default("")  // Question ID for the secondary verification input
   mappings         String   @default("{}")   // JSON: { questionId: columnName }
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

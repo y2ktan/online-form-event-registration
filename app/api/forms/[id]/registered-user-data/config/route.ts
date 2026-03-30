@@ -34,6 +34,8 @@ export async function GET(
   return NextResponse.json({
     lookupColumn: data.lookupColumn,
     lookupQuestionId: data.lookupQuestionId || null,
+    secondaryLookupColumn: data.secondaryLookupColumn || "",
+    secondaryLookupQuestionId: data.secondaryLookupQuestionId || null,
     mappings: JSON.parse(data.mappings),
   });
 }

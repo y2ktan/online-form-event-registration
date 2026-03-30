@@ -45,6 +45,8 @@ export async function GET(
       firstRow: rows[0] || null,
       lookupColumn: data.lookupColumn,
       lookupQuestionId: data.lookupQuestionId || "",
+      secondaryLookupColumn: data.secondaryLookupColumn || "",
+      secondaryLookupQuestionId: data.secondaryLookupQuestionId || "",
       mappings: JSON.parse(data.mappings),
     });
   } catch (err) {
@@ -183,6 +185,9 @@ export async function POST(
       rowCount: rows.length,
       firstRow: rows[0] || null,
       lookupColumn: data.lookupColumn,
+      lookupQuestionId: data.lookupQuestionId || "",
+      secondaryLookupColumn: data.secondaryLookupColumn || "",
+      secondaryLookupQuestionId: data.secondaryLookupQuestionId || "",
       mappings: JSON.parse(data.mappings),
     }, { status: 201 });
   } catch (err) {
@@ -231,6 +236,12 @@ export async function PUT(
     if (typeof body.lookupQuestionId === "string") {
       updateData.lookupQuestionId = body.lookupQuestionId;
     }
+    if (typeof body.secondaryLookupColumn === "string") {
+      updateData.secondaryLookupColumn = body.secondaryLookupColumn;
+    }
+    if (typeof body.secondaryLookupQuestionId === "string") {
+      updateData.secondaryLookupQuestionId = body.secondaryLookupQuestionId;
+    }
     if (body.mappings && typeof body.mappings === "object") {
       updateData.mappings = JSON.stringify(body.mappings);
     }
@@ -249,6 +260,8 @@ export async function PUT(
       firstRow: rows[0] || null,
       lookupColumn: data.lookupColumn,
       lookupQuestionId: data.lookupQuestionId || "",
+      secondaryLookupColumn: data.secondaryLookupColumn || "",
+      secondaryLookupQuestionId: data.secondaryLookupQuestionId || "",
       mappings: JSON.parse(data.mappings),
     });
   } catch (err) {

@@ -157,12 +157,17 @@ export async function POST(
           const newQId = questionMap.get(oldQId);
           if (newQId) newMappings[newQId] = colName;
         }
+        const newLookupQuestionId = vd.lookupQuestionId ? (questionMap.get(vd.lookupQuestionId) || "") : "";
+        const newSecondaryQuestionId = vd.secondaryLookupQuestionId ? (questionMap.get(vd.secondaryLookupQuestionId) || "") : "";
         await (tx as any).registeredUserData.create({
           data: {
             formId: form.id,
             headers: vd.headers,
             rows: vd.rows,
             lookupColumn: vd.lookupColumn,
+            lookupQuestionId: newLookupQuestionId,
+            secondaryLookupColumn: vd.secondaryLookupColumn || "",
+            secondaryLookupQuestionId: newSecondaryQuestionId,
             mappings: JSON.stringify(newMappings),
           },
         });

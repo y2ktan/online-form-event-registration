@@ -80,6 +80,7 @@ import {
 } from "@/lib/form-helpers";
 import { type FormTheme, DEFAULT_THEME, parseTheme, serializeTheme, COLOR_PRESETS, BG_PRESETS, HEADER_IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES, BUILT_IN_FONTS } from "@/lib/theme";
 import GoogleFormEditor from "@/components/GoogleFormEditor";
+import SearchableSelect from "@/components/SearchableSelect";
 import { sanitizeRichText, isRichTextEmpty } from "@/lib/rich-text";
 
 interface OptionData {
@@ -812,18 +813,13 @@ function SortableQuestion({
       {regUserHeaders && regUserHeaders.length > 0 && onMappingChange && !isTitle && (
         <div className="mt-3 border-t border-gray-100 pt-3 flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-gray-500">Profile Column:</span>
-          <select
+          <SearchableSelect
             value={regUserMapping || ""}
-            onChange={(e) => onMappingChange(question.id, e.target.value)}
-            className={`rounded-md border px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
-              regUserMapping ? "border-green-300 bg-green-50 text-green-800" : "border-gray-300 bg-white text-gray-600"
-            }`}
-          >
-            <option value="">— None —</option>
-            {regUserHeaders.map((h: string) => (
-              <option key={h} value={h}>{h}</option>
-            ))}
-          </select>
+            onChange={(val) => onMappingChange(question.id, val)}
+            options={regUserHeaders}
+            emptyLabel="— None —"
+            className="w-44"
+          />
           {regUserMapping && regUserFirstRow && regUserFirstRow[regUserMapping] !== undefined && (
             <span className="text-xs text-gray-400 italic truncate max-w-[14rem]" title={regUserFirstRow[regUserMapping]}>
               e.g. {regUserFirstRow[regUserMapping] || "—"}
@@ -1025,6 +1021,8 @@ export default function FormBuilderPage() {
     firstRow: Record<string, string> | null;
     lookupColumn: string;
     lookupQuestionId: string;
+    secondaryLookupColumn: string;
+    secondaryLookupQuestionId: string;
     mappings: Record<string, string>;
   } | null>(null);
   const [regUserLoading, setRegUserLoading] = useState(false);
@@ -1510,7 +1508,7 @@ export default function FormBuilderPage() {
     setRegUserUploading(false);
   }
 
-  async function updateRegUserConfig(updates: { lookupColumn?: string; lookupQuestionId?: string; mappings?: Record<string, string> }) {
+  async function updateRegUserConfig(updates: { lookupColumn?: string; lookupQuestionId?: string; secondaryLookupColumn?: string; secondaryLookupQuestionId?: string; mappings?: Record<string, string> }) {
     if (!regUserData) return;
     try {
       const res = await fetch(`/api/forms/${formId}/registered-user-data`, {
@@ -2639,6 +2637,46 @@ export default function FormBuilderPage() {
                         <option key={q.id} value={q.id}>{q.label} ({q.type})</option>
                       ))}
                     </select>
+                  </div>
+                )}
+
+                {/* Secondary Verification (Anti-Brute-Force) */}
+                {regUserData.lookupColumn && form && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-0.5">Secondary Verification Column <span className="text-xs font-normal text-gray-400">(optional)</span></label>
+                      <p className="text-xs text-gray-500 mb-2">
+                        Require a second field to match before auto-filling. This prevents attackers from brute-forcing lookup values to steal profile data.
+                      </p>
+                      <select
+                        value={regUserData.secondaryLookupColumn}
+                        onChange={(e) => updateRegUserConfig({ secondaryLookupColumn: e.target.value, secondaryLookupQuestionId: "" })}
+                        className="block w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="">— None (single-field lookup) —</option>
+                        {regUserData.headers.filter((h: string) => h !== regUserData.lookupColumn).map((h: string) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {regUserData.secondaryLookupColumn && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Secondary Verification Question</label>
+                        <p className="text-xs text-gray-500 mb-2">
+                          Which form question should the user type their secondary verification into?
+                        </p>
+                        <select
+                          value={regUserData.secondaryLookupQuestionId}
+                          onChange={(e) => updateRegUserConfig({ secondaryLookupQuestionId: e.target.value })}
+                          className="block w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          <option value="">— Select question —</option>
+                          {form.sections.flatMap((s) => s.questions).filter((q) => !q.config?.isTitle && !q.config?.isPhoneNumber && q.label?.trim() && q.id !== regUserData.lookupQuestionId).map((q) => (
+                            <option key={q.id} value={q.id}>{q.label} ({q.type})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
 
