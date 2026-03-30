@@ -2131,6 +2131,31 @@ export default function FormBuilderPage() {
                       />
                     ))}
                   </SortableContext>
+
+                  {/* Section routing — "After section X" dropdown (only for multi-section forms) */}
+                  {form.sections.length > 1 && (
+                    <div className="flex items-center gap-3 rounded-lg bg-gray-50 px-4 py-2.5 text-sm text-gray-500">
+                      <span className="whitespace-nowrap font-medium">After section {sIndex + 1}</span>
+                      <select
+                        value={section.routingConfig?.defaultRoute || "NEXT"}
+                        onChange={(e) => updateSection(sIndex, { routingConfig: { ...section.routingConfig, defaultRoute: e.target.value } })}
+                        className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="NEXT">Continue to next section</option>
+                        {form.sections
+                          .filter((_, i) => i !== sIndex)
+                          .map((s, _, arr) => {
+                            const realIndex = form.sections.findIndex((fs) => fs.id === s.id);
+                            return (
+                              <option key={s.id} value={s.id}>
+                                Go to section {realIndex + 1} ({s.title || "Untitled"})
+                              </option>
+                            );
+                          })}
+                        <option value="SUBMIT">Submit form</option>
+                      </select>
+                    </div>
+                  )}
                 </SectionContainer>
               );
             })}
