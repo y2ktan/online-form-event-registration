@@ -196,6 +196,10 @@ function SortableQuestion({
   addOption,
   updateOption,
   removeOption,
+  regUserHeaders,
+  regUserMapping,
+  regUserFirstRow,
+  onMappingChange,
 }: {
   question: QuestionData;
   sectionIndex: number;
@@ -207,6 +211,10 @@ function SortableQuestion({
   addOption: (sectionIndex: number, qIndex: number) => void;
   updateOption: (sectionIndex: number, qIndex: number, oIndex: number, value: string) => void;
   removeOption: (sectionIndex: number, qIndex: number, oIndex: number) => void;
+  regUserHeaders?: string[];
+  regUserMapping?: string;
+  regUserFirstRow?: Record<string, string> | null;
+  onMappingChange?: (questionId: string, columnName: string) => void;
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
@@ -800,6 +808,30 @@ function SortableQuestion({
         </div>
       </div>
 
+      {/* Column Mapping (Registered User Profile) */}
+      {regUserHeaders && regUserHeaders.length > 0 && onMappingChange && !isTitle && (
+        <div className="mt-3 border-t border-gray-100 pt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-gray-500">Profile Column:</span>
+          <select
+            value={regUserMapping || ""}
+            onChange={(e) => onMappingChange(question.id, e.target.value)}
+            className={`rounded-md border px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+              regUserMapping ? "border-green-300 bg-green-50 text-green-800" : "border-gray-300 bg-white text-gray-600"
+            }`}
+          >
+            <option value="">— None —</option>
+            {regUserHeaders.map((h: string) => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+          </select>
+          {regUserMapping && regUserFirstRow && regUserFirstRow[regUserMapping] !== undefined && (
+            <span className="text-xs text-gray-400 italic truncate max-w-[14rem]" title={regUserFirstRow[regUserMapping]}>
+              e.g. {regUserFirstRow[regUserMapping] || "—"}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Response Validation Settings */}
       {question.config?.validationEnabled && (
         <div className="mt-4 border-t border-gray-100 pt-4 flex flex-wrap items-center gap-3">
@@ -964,7 +996,7 @@ export default function FormBuilderPage() {
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators">("questions");
+  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile">("questions");
   const [showPreview, setShowPreview] = useState(false);
   const [responses, setResponses] = useState<ResponseEntry[]>([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
@@ -986,6 +1018,16 @@ export default function FormBuilderPage() {
   const [customFonts, setCustomFonts] = useState<{ id: string; name: string; filename: string }[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [regUserData, setRegUserData] = useState<{
+    id: string;
+    headers: string[];
+    rowCount: number;
+    firstRow: Record<string, string> | null;
+    lookupColumn: string;
+    mappings: Record<string, string>;
+  } | null>(null);
+  const [regUserLoading, setRegUserLoading] = useState(false);
+  const [regUserUploading, setRegUserUploading] = useState(false);
   const historyRef = useRef(new FormHistory<FormData>(50));
   const undoRedoRef = useRef(false);
   const historyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1091,6 +1133,7 @@ export default function FormBuilderPage() {
       // Mark loaded after a tick so the first setForm from fetch doesn't trigger auto-save
       setTimeout(() => { loadedRef.current = true; }, 100);
     });
+    fetchRegUserData();
   }, [fetchForm]);
 
   // Auto-save debounce (declared BEFORE history effect so it captures undoRedoRef first)
@@ -1432,6 +1475,65 @@ export default function FormBuilderPage() {
     return `${window.location.origin}/edit/${responseId}?token=${editToken}`;
   }
 
+  async function fetchRegUserData() {
+    setRegUserLoading(true);
+    try {
+      const res = await fetch(`/api/forms/${formId}/registered-user-data`);
+      if (res.ok) {
+        const data = await res.json();
+        setRegUserData(data);
+      }
+    } catch { /* ignore */ }
+    setRegUserLoading(false);
+  }
+
+  async function uploadRegUserFile(file: File) {
+    setRegUserUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/forms/${formId}/registered-user-data`, {
+        method: "POST",
+        body: fd,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRegUserData(data);
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to upload file.");
+      }
+    } catch {
+      alert("Failed to upload file.");
+    }
+    setRegUserUploading(false);
+  }
+
+  async function updateRegUserConfig(updates: { lookupColumn?: string; mappings?: Record<string, string> }) {
+    if (!regUserData) return;
+    try {
+      const res = await fetch(`/api/forms/${formId}/registered-user-data`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRegUserData(data);
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function deleteRegUserData() {
+    if (!confirm("Remove the uploaded user profile data? This cannot be undone.")) return;
+    try {
+      const res = await fetch(`/api/forms/${formId}/registered-user-data`, { method: "DELETE" });
+      if (res.ok) {
+        setRegUserData(null);
+      }
+    } catch { /* ignore */ }
+  }
+
   async function fetchCollaborators() {
     setCollabLoading(true);
     try {
@@ -1686,6 +1788,20 @@ export default function FormBuilderPage() {
               Collaborators
             </button>
           )}
+          <button
+            onClick={() => {
+              setActiveTab("userProfile");
+              fetchRegUserData();
+            }}
+            className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium ${
+              activeTab === "userProfile"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <Import className="h-4 w-4" />
+            User Profile
+          </button>
         </div>
       </header>
 
@@ -2001,6 +2117,18 @@ export default function FormBuilderPage() {
                         addOption={addOptionInSection}
                         updateOption={updateOptionInSection}
                         removeOption={removeOptionFromSection}
+                        regUserHeaders={regUserData?.lookupColumn ? regUserData.headers : undefined}
+                        regUserMapping={regUserData?.mappings[question.id]}
+                        regUserFirstRow={regUserData?.firstRow}
+                        onMappingChange={regUserData?.lookupColumn ? (qId, col) => {
+                          const newMappings = { ...regUserData.mappings };
+                          if (col) {
+                            newMappings[qId] = col;
+                          } else {
+                            delete newMappings[qId];
+                          }
+                          updateRegUserConfig({ mappings: newMappings });
+                        } : undefined}
                       />
                     ))}
                   </SortableContext>
@@ -2401,6 +2529,134 @@ export default function FormBuilderPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Registered User Profile tab */}
+        {activeTab === "userProfile" && (
+          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-1">Registered User Profile</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Upload a user list (XLSX). When a user enters their lookup key, mapped fields will auto-fill.
+            </p>
+
+            {regUserLoading ? (
+              <div className="flex items-center justify-center py-12 text-gray-500">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading…
+              </div>
+            ) : !regUserData ? (
+              <div className="rounded-xl border-2 border-dashed border-gray-300 p-12 text-center">
+                <Upload className="mx-auto h-10 w-10 text-gray-400 mb-3" />
+                <p className="text-sm text-gray-600 mb-4">No user profile uploaded yet.</p>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                  {regUserUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {regUserUploading ? "Uploading…" : "Upload XLSX"}
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    disabled={regUserUploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) uploadRegUserFile(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* File info */}
+                <div className="flex items-center justify-between rounded-lg border bg-gray-50 p-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {regUserData.headers.length} columns · {regUserData.rowCount} rows
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5 max-w-md truncate">
+                      {regUserData.headers.join(", ")}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                      {regUserUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                      Replace
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="hidden"
+                        disabled={regUserUploading}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) uploadRegUserFile(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <button
+                      onClick={deleteRegUserData}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lookup Column */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Lookup Column</label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Which column should be used to match the user&apos;s input? (e.g., IC Number, User ID)
+                  </p>
+                  <select
+                    value={regUserData.lookupColumn}
+                    onChange={(e) => updateRegUserConfig({ lookupColumn: e.target.value })}
+                    className="block w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">— Select column —</option>
+                    {regUserData.headers.map((h: string) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Mapping summary & auto-match */}
+                {regUserData.lookupColumn && form && (
+                  <div className="rounded-lg border bg-indigo-50/50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Column Mapping</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {Object.keys(regUserData.mappings).length} of {form.sections.flatMap((s) => s.questions).filter((q) => !q.config?.isTitle && !q.config?.isPhoneNumber && q.label?.trim()).length} questions mapped.
+                          Go to the <button type="button" onClick={() => setActiveTab("questions")} className="text-indigo-600 underline hover:text-indigo-800">Questions</button> tab to map each question to a column.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const allQ = form.sections.flatMap((s) => s.questions).filter((q) => !q.config?.isTitle && !q.config?.isPhoneNumber && q.label?.trim());
+                          const headerSet = new Set(regUserData.headers);
+                          const newMappings: Record<string, string> = { ...regUserData.mappings };
+                          let matched = 0;
+                          for (const q of allQ) {
+                            if (!newMappings[q.id] && q.label && headerSet.has(q.label)) {
+                              newMappings[q.id] = q.label;
+                              matched++;
+                            }
+                          }
+                          if (matched > 0) {
+                            updateRegUserConfig({ mappings: newMappings });
+                          } else {
+                            alert("No exact matches found between question labels and column headers.");
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5" /> Auto-Match
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

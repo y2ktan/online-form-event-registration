@@ -111,6 +111,12 @@ export default function PublicFormPage() {
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [sectionHistory, setSectionHistory] = useState<number[]>([]);
   const [customFontCss, setCustomFontCss] = useState("");
+  const [regUserConfig, setRegUserConfig] = useState<{
+    lookupColumn: string;
+    mappings: Record<string, string>;
+    lookupQuestionId: string | null;
+  } | null>(null);
+  const [regUserLookedUp, setRegUserLookedUp] = useState(false);
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -176,6 +182,42 @@ export default function PublicFormPage() {
   useEffect(() => {
     fetchForm().finally(() => setLoading(false));
   }, [fetchForm]);
+
+  // Fetch registered user mapping config (public-safe: only lookupColumn + mappings, no rows)
+  useEffect(() => {
+    if (!form) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/forms/${formId}/registered-user-data/config`);
+        if (!res.ok) return;
+        const cfg = await res.json();
+        if (!cfg || !cfg.lookupColumn) return;
+        // Find which questionId is mapped to the lookupColumn
+        const mappings: Record<string, string> = cfg.mappings || {};
+        let lookupQId: string | null = null;
+        for (const [qId, colName] of Object.entries(mappings)) {
+          if (colName === cfg.lookupColumn) {
+            lookupQId = qId;
+            break;
+          }
+        }
+        setRegUserConfig({ lookupColumn: cfg.lookupColumn, mappings, lookupQuestionId: lookupQId });
+      } catch { /* ignore */ }
+    })();
+  }, [form, formId]);
+
+  async function regUserLookup(key: string) {
+    if (!key.trim() || !regUserConfig) return;
+    try {
+      const res = await fetch(`/api/forms/${formId}/registered-user-lookup?key=${encodeURIComponent(key.trim())}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.found && data.values) {
+        setAnswers((prev) => ({ ...prev, ...data.values }));
+        setRegUserLookedUp(true);
+      }
+    } catch { /* ignore */ }
+  }
 
   function updateAnswer(questionId: string, value: string) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -701,6 +743,11 @@ export default function PublicFormPage() {
                     onChange={(e) =>
                       updateAnswer(question.id, e.target.value)
                     }
+                    onBlur={(e) => {
+                      if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
+                        regUserLookup(e.target.value);
+                      }
+                    }}
                     className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     placeholder="Your answer"
                   />
@@ -840,9 +887,12 @@ export default function PublicFormPage() {
                 {question.type === "DROPDOWN" && (
                   <select
                     value={answers[question.id] || ""}
-                    onChange={(e) =>
-                      updateAnswer(question.id, e.target.value)
-                    }
+                    onChange={(e) => {
+                      updateAnswer(question.id, e.target.value);
+                      if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
+                        regUserLookup(e.target.value);
+                      }
+                    }}
                     className={`block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${answers[question.id] ? "text-gray-900" : "text-gray-400"}`}
                   >
                     <option value="" disabled className="text-gray-400">Choose</option>

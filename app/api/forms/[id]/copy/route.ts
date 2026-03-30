@@ -27,7 +27,7 @@ export async function POST(
 
   try {
     // Fetch the original form with all nested relations in one query
-    const original = await prisma.form.findUnique({
+    const original = await (prisma as any).form.findUnique({
       where: { id },
       include: {
         sections: {
@@ -40,6 +40,7 @@ export async function POST(
           orderBy: { order: "asc" },
         },
         collaborators: true,
+        registeredUserData: true,
       },
     });
 
@@ -91,6 +92,7 @@ export async function POST(
       }
 
       // 3. Create questions with pre-patched configs + options, and patch section routing — single pass
+      const questionMap = new Map<string, string>();
       for (const s of original.sections) {
         const newSectionId = sectionMap.get(s.id)!;
 
@@ -120,6 +122,7 @@ export async function POST(
               config,
             },
           });
+          questionMap.set(q.id, newQuestion.id);
 
           if (q.options.length > 0) {
             await tx.option.createMany({
@@ -142,6 +145,26 @@ export async function POST(
             formId: form.id,
             role: c.role,
           })),
+        });
+      }
+
+      // 6. Copy registered user data with remapped question IDs
+      if ((original as any).registeredUserData) {
+        const vd = (original as any).registeredUserData;
+        const oldMappings: Record<string, string> = typeof vd.mappings === "string" ? JSON.parse(vd.mappings) : (vd.mappings || {});
+        const newMappings: Record<string, string> = {};
+        for (const [oldQId, colName] of Object.entries(oldMappings)) {
+          const newQId = questionMap.get(oldQId);
+          if (newQId) newMappings[newQId] = colName;
+        }
+        await (tx as any).registeredUserData.create({
+          data: {
+            formId: form.id,
+            headers: vd.headers,
+            rows: vd.rows,
+            lookupColumn: vd.lookupColumn,
+            mappings: JSON.stringify(newMappings),
+          },
         });
       }
 
