@@ -167,6 +167,9 @@ export async function POST(
         headers: JSON.stringify(headers),
         rows: JSON.stringify(rows),
         lookupColumn: "",
+        lookupQuestionId: "",
+        secondaryLookupColumn: "",
+        secondaryLookupQuestionId: "",
         mappings: "{}",
       },
       create: {
@@ -174,6 +177,9 @@ export async function POST(
         headers: JSON.stringify(headers),
         rows: JSON.stringify(rows),
         lookupColumn: "",
+        lookupQuestionId: "",
+        secondaryLookupColumn: "",
+        secondaryLookupQuestionId: "",
         mappings: "{}",
       },
     });

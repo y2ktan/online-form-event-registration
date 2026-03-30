@@ -1027,6 +1027,13 @@ export default function FormBuilderPage() {
   } | null>(null);
   const [regUserLoading, setRegUserLoading] = useState(false);
   const [regUserUploading, setRegUserUploading] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importForms, setImportForms] = useState<Array<{ id: string; title: string; _count: { questions: number } }>>([]);
+  const [importFormSearch, setImportFormSearch] = useState("");
+  const [importSelectedFormId, setImportSelectedFormId] = useState<string | null>(null);
+  const [importQuestions, setImportQuestions] = useState<QuestionData[]>([]);
+  const [importSelectedQIds, setImportSelectedQIds] = useState<Set<string>>(new Set());
+  const [importLoading, setImportLoading] = useState(false);
   const historyRef = useRef(new FormHistory<FormData>(50));
   const undoRedoRef = useRef(false);
   const historyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1437,10 +1444,20 @@ export default function FormBuilderPage() {
       return;
     }
     pushHistoryNow();
+    const deletedId = form.sections[sectionIndex].id;
     const result = removeSectionWithQuestions(form.sections, sectionIndex);
     if (result) {
-      setForm({ ...form, sections: result });
-      setActiveSectionIndex((prev) => Math.min(prev, result.length - 1));
+      // Clean up stale routing references pointing to the deleted section
+      const remainingIds = new Set(result.map((s) => s.id));
+      const cleaned = result.map((s) => {
+        const route = s.routingConfig?.defaultRoute;
+        if (route && route !== "NEXT" && route !== "SUBMIT" && !remainingIds.has(route)) {
+          return { ...s, routingConfig: { ...s.routingConfig, defaultRoute: "NEXT" } };
+        }
+        return s;
+      });
+      setForm({ ...form, sections: cleaned });
+      setActiveSectionIndex((prev) => Math.min(prev, cleaned.length - 1));
     }
   }
 
@@ -1472,6 +1489,64 @@ export default function FormBuilderPage() {
 
   function getEditLink(responseId: string, editToken: string) {
     return `${window.location.origin}/edit/${responseId}?token=${editToken}`;
+  }
+
+  async function openImportModal() {
+    setShowImportModal(true);
+    setImportSelectedFormId(null);
+    setImportQuestions([]);
+    setImportSelectedQIds(new Set());
+    setImportFormSearch("");
+    setImportLoading(true);
+    try {
+      const res = await fetch("/api/forms");
+      if (res.ok) {
+        const data = await res.json();
+        setImportForms(data.filter((f: any) => f.id !== formId));
+      }
+    } catch { /* ignore */ } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function selectImportForm(id: string) {
+    setImportSelectedFormId(id);
+    setImportQuestions([]);
+    setImportSelectedQIds(new Set());
+    setImportLoading(true);
+    try {
+      const res = await fetch(`/api/forms/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const questions: QuestionData[] = (data.sections || []).flatMap((s: any) =>
+          (s.questions || []).map((q: any) => ({
+            ...q,
+            config: typeof q.config === "string" ? JSON.parse(q.config) : (q.config || {}),
+            options: (q.options || []).map((o: any) => ({ id: o.id, value: o.value, order: o.order, group: o.group || "" })),
+          }))
+        );
+        setImportQuestions(questions.filter(q => !q.config?.isPhoneNumber));
+      }
+    } catch { /* ignore */ } finally {
+      setImportLoading(false);
+    }
+  }
+
+  function handleImportQuestions() {
+    if (!form || importSelectedQIds.size === 0) return;
+    pushHistoryNow();
+    const section = form.sections[activeSectionIndex];
+    const selected = importQuestions.filter(q => importSelectedQIds.has(q.id));
+    const newQuestions = selected.map((q, i) => ({
+      ...q,
+      id: tempId(),
+      order: section.questions.length + i,
+      options: (q.options || []).map((o: OptionData) => ({ ...o, id: tempId() })),
+    }));
+    const newSections = [...form.sections];
+    newSections[activeSectionIndex] = { ...section, questions: [...section.questions, ...newQuestions] };
+    setForm({ ...form, sections: newSections });
+    setShowImportModal(false);
   }
 
   async function fetchRegUserData() {
@@ -2214,42 +2289,10 @@ export default function FormBuilderPage() {
 
             <div className="mx-1 h-6 w-px bg-gray-200" />
 
-            {/* Import */}
+            {/* Import questions from other forms */}
             <button
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = ".json";
-                input.onchange = async (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0];
-                  if (!file || !form) return;
-                  try {
-                    const text = await file.text();
-                    const imported = JSON.parse(text);
-                    if (Array.isArray(imported.questions)) {
-                      const lastSectionIdx = form.sections.length - 1;
-                      const lastSection = form.sections[lastSectionIdx];
-                      const newQuestions = imported.questions.map(
-                        (q: QuestionData, i: number) => ({
-                          ...q,
-                          id: tempId(),
-                          order: lastSection.questions.length + i,
-                          options: (q.options || []).map(
-                            (o: OptionData) => ({ ...o, id: tempId() })
-                          ),
-                        })
-                      );
-                      const newSections = [...form.sections];
-                      newSections[lastSectionIdx] = { ...lastSection, questions: [...lastSection.questions, ...newQuestions] };
-                      setForm({ ...form, sections: newSections });
-                    }
-                  } catch {
-                    alert("Invalid JSON file.");
-                  }
-                };
-                input.click();
-              }}
-              className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Import questions from JSON"
+              onClick={() => openImportModal()}
+              className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Import questions"
             >
               <Import className="h-4 w-4" />
             </button>
@@ -2746,6 +2789,121 @@ export default function FormBuilderPage() {
           </div>
         )}
       </div>
+
+      {/* Import from Forms modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowImportModal(false)}>
+          <div className="relative w-full max-w-lg rounded-xl bg-white shadow-xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <h3 className="text-sm font-semibold text-gray-900">
+                {importSelectedFormId ? "Select Questions" : "Import Questions from Form"}
+              </h3>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {importLoading ? (
+                <div className="flex items-center justify-center py-12 text-gray-500">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading…
+                </div>
+              ) : !importSelectedFormId ? (
+                <>
+                  <div className="relative mb-3">
+                    <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={importFormSearch}
+                      onChange={(e) => setImportFormSearch(e.target.value)}
+                      placeholder="Search forms…"
+                      className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  {importForms.filter(f => !importFormSearch || f.title.toLowerCase().includes(importFormSearch.toLowerCase())).length === 0 ? (
+                    <p className="py-8 text-center text-sm text-gray-400">No other forms found.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {importForms
+                        .filter(f => !importFormSearch || f.title.toLowerCase().includes(importFormSearch.toLowerCase()))
+                        .map(f => (
+                          <button
+                            key={f.id}
+                            onClick={() => selectImportForm(f.id)}
+                            className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-gray-50"
+                          >
+                            <span className="text-sm font-medium text-gray-800 truncate">{f.title}</span>
+                            <span className="ml-2 shrink-0 text-xs text-gray-400">{f._count.questions} questions</span>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setImportSelectedFormId(null)}
+                    className="mb-3 flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
+                  >
+                    <ArrowLeft className="h-3 w-3" /> Back to forms
+                  </button>
+                  {importQuestions.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-gray-400">No questions in this form.</p>
+                  ) : (
+                    <>
+                      <label className="mb-2 flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={importSelectedQIds.size === importQuestions.length}
+                          onChange={() => {
+                            if (importSelectedQIds.size === importQuestions.length) {
+                              setImportSelectedQIds(new Set());
+                            } else {
+                              setImportSelectedQIds(new Set(importQuestions.map(q => q.id)));
+                            }
+                          }}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Select all ({importQuestions.length})
+                      </label>
+                      <div className="space-y-1">
+                        {importQuestions.map(q => (
+                          <label key={q.id} className="flex items-start gap-2 rounded-lg px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={importSelectedQIds.has(q.id)}
+                              onChange={() => {
+                                const next = new Set(importSelectedQIds);
+                                if (next.has(q.id)) next.delete(q.id); else next.add(q.id);
+                                setImportSelectedQIds(next);
+                              }}
+                              className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm text-gray-800 truncate">{q.label || "(Untitled)"}</p>
+                              <p className="text-xs text-gray-400">{QUESTION_TYPE_LABELS[q.type] || q.type}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            {importSelectedFormId && importSelectedQIds.size > 0 && (
+              <div className="border-t px-5 py-3 flex items-center justify-between">
+                <span className="text-xs text-gray-500">{importSelectedQIds.size} question{importSelectedQIds.size > 1 ? "s" : ""} selected → Section {activeSectionIndex + 1}</span>
+                <button
+                  onClick={handleImportQuestions}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                >
+                  Import
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Preview modal */}
       {showPreview && (
