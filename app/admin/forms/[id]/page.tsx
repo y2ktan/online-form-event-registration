@@ -201,6 +201,7 @@ function SortableQuestion({
   regUserMapping,
   regUserFirstRow,
   onMappingChange,
+  isLookupQuestion,
 }: {
   question: QuestionData;
   sectionIndex: number;
@@ -216,6 +217,7 @@ function SortableQuestion({
   regUserMapping?: string;
   regUserFirstRow?: Record<string, string> | null;
   onMappingChange?: (questionId: string, columnName: string) => void;
+  isLookupQuestion?: boolean;
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
@@ -813,13 +815,19 @@ function SortableQuestion({
       {regUserHeaders && regUserHeaders.length > 0 && onMappingChange && !isTitle && (
         <div className="mt-3 border-t border-gray-100 pt-3 flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-gray-500">Profile Column:</span>
-          <SearchableSelect
-            value={regUserMapping || ""}
-            onChange={(val) => onMappingChange(question.id, val)}
-            options={regUserHeaders}
-            emptyLabel="— None —"
-            className="w-44"
-          />
+          {isLookupQuestion ? (
+            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-200">
+              {regUserMapping || "None"}
+            </span>
+          ) : (
+            <SearchableSelect
+              value={regUserMapping || ""}
+              onChange={(val) => onMappingChange(question.id, val)}
+              options={regUserHeaders}
+              emptyLabel="— None —"
+              className="w-44"
+            />
+          )}
           {regUserMapping && regUserFirstRow && regUserFirstRow[regUserMapping] !== undefined && (
             <span className="text-xs text-gray-400 italic truncate max-w-[14rem]" title={regUserFirstRow[regUserMapping]}>
               e.g. {regUserFirstRow[regUserMapping] || "—"}
@@ -2194,6 +2202,7 @@ export default function FormBuilderPage() {
                         regUserHeaders={regUserData?.lookupColumn ? regUserData.headers : undefined}
                         regUserMapping={regUserData?.mappings[question.id]}
                         regUserFirstRow={regUserData?.firstRow}
+                        isLookupQuestion={regUserData?.lookupQuestionId === question.id}
                         onMappingChange={regUserData?.lookupColumn ? (qId, col) => {
                           const newMappings = { ...regUserData.mappings };
                           if (col) {
@@ -2697,7 +2706,19 @@ export default function FormBuilderPage() {
                     </p>
                     <select
                       value={regUserData.lookupQuestionId}
-                      onChange={(e) => updateRegUserConfig({ lookupQuestionId: e.target.value })}
+                      onChange={(e) => {
+                        const newQId = e.target.value;
+                        const newMappings = { ...regUserData.mappings };
+                        // Unmap old lookup question if it was mapped to the lookup column
+                        if (regUserData.lookupQuestionId && newMappings[regUserData.lookupQuestionId] === regUserData.lookupColumn) {
+                          delete newMappings[regUserData.lookupQuestionId];
+                        }
+                        // Auto-map new lookup question to the lookup column
+                        if (newQId && regUserData.lookupColumn) {
+                          newMappings[newQId] = regUserData.lookupColumn;
+                        }
+                        updateRegUserConfig({ lookupQuestionId: newQId, mappings: newMappings });
+                      }}
                       className="block w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
                       <option value="">— Select question —</option>
