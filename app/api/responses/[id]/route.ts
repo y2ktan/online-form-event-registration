@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
+import { maskValue } from "@/lib/masking";
 
 interface GridItem {
   id: string;
@@ -60,6 +61,27 @@ export async function GET(
 
   if (!isAdmin && !hasValidToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // For public (token-based) access, mask auto-generated profile field values
+  const isPublicAccess = hasValidToken && !isAdmin;
+  if (isPublicAccess) {
+    try {
+      const regUserData = await (prisma as any).registeredUserData.findUnique({
+        where: { formId: response.formId },
+      });
+      if (regUserData?.mappings) {
+        const mappings: Record<string, string> = JSON.parse(regUserData.mappings);
+        const mappedQuestionIds = new Set(Object.keys(mappings));
+        const maskedAnswers = (response as any).answers.map((ans: any) => {
+          if (mappedQuestionIds.has(ans.questionId)) {
+            return { ...ans, value: maskValue(ans.value) };
+          }
+          return ans;
+        });
+        return NextResponse.json({ ...response, answers: maskedAnswers });
+      }
+    } catch { /* table may not exist yet — return unmasked */ }
   }
 
   return NextResponse.json(response);

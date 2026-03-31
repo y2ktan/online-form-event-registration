@@ -99,7 +99,7 @@ function EditResponseForm() {
     if (res.ok) {
       const respData = await res.json();
       setData(respData);
-      setPhoneNumber(respData.phoneNumber);
+      setPhoneNumber(respData.phoneNumber || "");
 
       const initialAnswers: Record<string, string> = {};
       const initialOtherText: Record<string, string> = {};
