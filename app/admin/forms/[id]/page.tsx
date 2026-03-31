@@ -2740,7 +2740,18 @@ function FormBuilderPageInner() {
                   </p>
                   <select
                     value={regUserData.lookupColumn}
-                    onChange={(e) => updateRegUserConfig({ lookupColumn: e.target.value })}
+                    onChange={(e) => {
+                      const newCol = e.target.value;
+                      const newMappings = { ...regUserData.mappings };
+                      if (regUserData.lookupQuestionId) {
+                        if (newCol) {
+                          newMappings[regUserData.lookupQuestionId] = newCol;
+                        } else {
+                          delete newMappings[regUserData.lookupQuestionId];
+                        }
+                      }
+                      updateRegUserConfig({ lookupColumn: newCol, mappings: newMappings });
+                    }}
                     className="block w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   >
                     <option value="">— Select column —</option>
