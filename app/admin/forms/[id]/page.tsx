@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import {
   Plus,
   Trash2,
@@ -996,13 +996,16 @@ function SortableQuestion({
 export default function FormBuilderPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const formId = params.id as string;
 
   const [form, setForm] = useState<FormData | null>(null);
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile">("questions");
+  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile">(
+    searchParams.get("tab") === "responses" ? "responses" : "questions"
+  );
   const [showPreview, setShowPreview] = useState(false);
   const [responses, setResponses] = useState<ResponseEntry[]>([]);
   const [responsesLoading, setResponsesLoading] = useState(false);

@@ -91,4 +91,4 @@ RUN mkdir -p /app/data /app/public/uploads /app/public/fonts && chown -R nextjs:
 
 USER nextjs
 
-CMD ["sh", "-c", "npx prisma db push && npx prisma db seed"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx prisma db seed"]

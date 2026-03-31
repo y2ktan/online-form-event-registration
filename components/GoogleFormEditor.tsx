@@ -31,6 +31,8 @@ const extensions = [
     blockquote: false,
     horizontalRule: false,
     hardBreak: false,
+    link: false,
+    underline: false,
   }),
   Underline,
   Link.configure({

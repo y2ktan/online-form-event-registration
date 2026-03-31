@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   FileText,
@@ -50,11 +50,14 @@ interface ResponseData {
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [forms, setForms] = useState<Form[]>([]);
   const [responses, setResponses] = useState<ResponseData[]>([]);
   const [phoneSearch, setPhoneSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"forms" | "responses">("forms");
+  const [activeTab, setActiveTab] = useState<"forms" | "responses">(
+    searchParams.get("tab") === "responses" ? "responses" : "forms"
+  );
   const [loading, setLoading] = useState(true);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);

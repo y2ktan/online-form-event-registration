@@ -41,6 +41,15 @@ export async function GET(
       answers: { include: { question: true } },
       form: {
         include: {
+          sections: {
+            orderBy: { order: "asc" },
+            include: {
+              questions: {
+                include: { options: { orderBy: { order: "asc" } } },
+                orderBy: { order: "asc" },
+              },
+            },
+          },
           questions: {
             include: { options: { orderBy: { order: "asc" } } },
             orderBy: { order: "asc" },
@@ -129,12 +138,18 @@ export async function PUT(
 
   try {
     const body = await request.json();
-    const { answers, editToken } = body;
+    const { answers, editToken, phoneNumber, visitedSectionIds } = body;
 
     const existing = await prisma.response.findUnique({
       where: { id },
       include: {
-        form: { include: { questions: true } },
+        answers: true,
+        form: { 
+          include: { 
+            questions: { orderBy: { order: "asc" } },
+            sections: { orderBy: { order: "asc" } }
+          } 
+        },
       },
     });
 
@@ -151,72 +166,111 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Validate required fields
-    for (const question of existing.form.questions) {
-      if (question.isRequired) {
-        const answer = answers[question.id];
-        const answerValue = typeof answer === "string" ? answer : JSON.stringify(answer);
-        const config = (typeof question.config === "string" ? JSON.parse(question.config) : question.config) as QuestionConfig;
+    const isPublicAccess = hasValidToken && !isAdmin;
 
+    // Build set of visited section IDs for scoped validation
+    const visitedSet: Set<string> | null = Array.isArray(visitedSectionIds) && visitedSectionIds.length > 0
+      ? new Set(visitedSectionIds as string[])
+      : null;
+
+    // Identify phone number question IDs
+    const phoneQuestionIds = new Set<string>();
+    for (const question of existing.form.questions) {
+      let config: any = {};
+      try {
+        config = typeof question.config === "string" ? JSON.parse(question.config) : (question.config ?? {});
+      } catch { /* ignore */ }
+      
+      if (config.isPhoneNumber) {
+        phoneQuestionIds.add(question.id);
+        continue;
+      }
+
+      // Skip dekorative title questions
+      if (config.isTitle) continue;
+
+      // Skip questions in sections the user never visited (if provided)
+      if (visitedSet && question.sectionId && !visitedSet.has(question.sectionId)) {
+        continue;
+      }
+
+      const answer = answers[question.id];
+      const answerValue = typeof answer === "string" ? answer : JSON.stringify(answer);
+
+      // Validate required fields
+      if (question.isRequired) {
         if (isGridType(question.type as any)) {
           try {
-            const gridAnswers = JSON.parse(answerValue);
+            const gridAnswers = JSON.parse(answerValue || "{}");
             const rows = config.grid?.rows || [];
-            
             if (rows.length === 0) {
               if (!answer || answerValue === "{}" || answerValue === "[]") {
-                return NextResponse.json(
-                  { error: `"${question.label}" is required.` },
-                  { status: 400 }
-                );
+                return NextResponse.json({ error: `"${question.label}" is required.` }, { status: 400 });
               }
             } else {
               for (const row of rows) {
                 const rowAnswer = gridAnswers[row.id];
                 if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
-                  return NextResponse.json(
-                    { error: `"${question.label}": Each row requires a response.` },
-                    { status: 400 }
-                  );
+                  return NextResponse.json({ error: `"${question.label}": Each row requires a response.` }, { status: 400 });
                 }
               }
             }
-          } catch (e) {
-            return NextResponse.json(
-              { error: `"${question.label}" is required.` },
-              { status: 400 }
-            );
+          } catch {
+            return NextResponse.json({ error: `"${question.label}" is required.` }, { status: 400 });
           }
         } else {
           if (!answer || (typeof answer === "string" && !answer.trim()) || answer === "[]") {
-            return NextResponse.json(
-              { error: `"${question.label}" is required.` },
-              { status: 400 }
-            );
+            return NextResponse.json({ error: `"${question.label}" is required.` }, { status: 400 });
           }
         }
       }
     }
 
     // Update phone number if provided
-    if (body.phoneNumber) {
+    if (phoneNumber !== undefined) {
       await prisma.response.update({
         where: { id },
-        data: { phoneNumber: sanitize(body.phoneNumber) },
+        data: { phoneNumber: sanitize(phoneNumber) },
       });
     }
 
+    // Identify mapped questions to handle masked values for public access
+    let mappedQuestionIds = new Set<string>();
+    if (isPublicAccess) {
+      try {
+        const regUserData = await (prisma as any).registeredUserData.findUnique({
+          where: { formId: existing.formId },
+        });
+        if (regUserData?.mappings) {
+          const mappings = JSON.parse(regUserData.mappings);
+          mappedQuestionIds = new Set(Object.keys(mappings));
+        }
+      } catch { /* table may not exist */ }
+    }
+
+    // Filter out phone number question from answers before saving
+    const filteredAnswers = Object.entries(answers as Record<string, unknown>).filter(
+      ([questionId]) => !phoneQuestionIds.has(questionId)
+    );
+
     // Delete old answers and create new ones
     await prisma.answer.deleteMany({ where: { responseId: id } });
-    for (const [questionId, value] of Object.entries(
-      answers as Record<string, unknown>
-    )) {
+    for (const [questionId, value] of filteredAnswers) {
+      let finalValue = typeof value === "string" ? sanitize(value) : JSON.stringify(value);
+
+      // For public access, if user sent a masked value that hasn't changed, restore the clear text
+      if (isPublicAccess && mappedQuestionIds.has(questionId)) {
+        const existingAnswer = existing.answers.find(a => a.questionId === questionId);
+        if (existingAnswer && finalValue === maskValue(existingAnswer.value)) {
+          finalValue = existingAnswer.value;
+        }
+      }
+
       await prisma.answer.create({
         data: {
           responseId: id,
           questionId,
-          value:
-            typeof value === "string" ? sanitize(value) : JSON.stringify(value),
+          value: finalValue,
         },
       });
     }
