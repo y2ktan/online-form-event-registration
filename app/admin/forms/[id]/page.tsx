@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo, Suspense } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import {
   Plus,
@@ -196,6 +196,7 @@ function SortableQuestion({
   sections,
   updateQuestion,
   removeQuestion,
+  duplicateQuestion,
   addOption,
   updateOption,
   removeOption,
@@ -212,6 +213,7 @@ function SortableQuestion({
   sections: SectionData[];
   updateQuestion: (sectionIndex: number, qIndex: number, updates: Partial<QuestionData>) => void;
   removeQuestion: (sectionIndex: number, qIndex: number) => void;
+  duplicateQuestion: (sectionIndex: number, qIndex: number) => void;
   addOption: (sectionIndex: number, qIndex: number) => void;
   updateOption: (sectionIndex: number, qIndex: number, oIndex: number, value: string) => void;
   removeOption: (sectionIndex: number, qIndex: number, oIndex: number) => void;
@@ -291,6 +293,7 @@ function SortableQuestion({
 
   return (
     <div
+      id={`question-${question.id}`}
       ref={setNodeRef}
       style={style}
       className={`rounded-lg border bg-white p-3 shadow-sm sm:rounded-xl sm:p-5 ${
@@ -805,6 +808,13 @@ function SortableQuestion({
           </div>
 
           <button
+            onClick={() => duplicateQuestion(sectionIndex, qIndex)}
+            className="rounded p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-500"
+            title="Duplicate"
+          >
+            <ClipboardCopy className="h-4 w-4" />
+          </button>
+          <button
             onClick={() => removeQuestion(sectionIndex, qIndex)}
             className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
           >
@@ -993,7 +1003,7 @@ function SortableQuestion({
   );
 }
 
-export default function FormBuilderPage() {
+function FormBuilderPageInner() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -1369,6 +1379,28 @@ export default function FormBuilderPage() {
     questions.forEach((q, i) => (q.order = i));
     newSections[sectionIndex] = { ...section, questions };
     setForm({ ...form, sections: newSections });
+  }
+
+  function duplicateQuestionInSection(sectionIndex: number, qIndex: number) {
+    if (!form) return;
+    pushHistoryNow();
+    const section = form.sections[sectionIndex];
+    const src = section.questions[qIndex];
+    const newId = tempId();
+    const newQ: QuestionData = {
+      ...src,
+      id: newId,
+      label: `${src.label} (Copy)`,
+      order: section.questions.length,
+      options: src.options.map((o) => ({ ...o, id: tempId() })),
+      config: { ...src.config, locked: undefined },
+    };
+    const newSections = [...form.sections];
+    newSections[sectionIndex] = { ...section, questions: [...section.questions, newQ] };
+    setForm({ ...form, sections: newSections });
+    setTimeout(() => {
+      document.getElementById(`question-${newId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
   }
 
   function addOptionInSection(sectionIndex: number, qIndex: number) {
@@ -2216,6 +2248,7 @@ export default function FormBuilderPage() {
                         sections={form.sections}
                         updateQuestion={updateQuestionInSection}
                         removeQuestion={removeQuestionFromSection}
+                        duplicateQuestion={duplicateQuestionInSection}
                         addOption={addOptionInSection}
                         updateOption={updateOptionInSection}
                         removeOption={removeOptionFromSection}
@@ -3125,5 +3158,13 @@ export default function FormBuilderPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function FormBuilderPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><div className="text-gray-500">Loading...</div></div>}>
+      <FormBuilderPageInner />
+    </Suspense>
   );
 }
