@@ -249,6 +249,7 @@ function SortableQuestion({
   if (isTitle) {
     return (
       <div
+        id={`question-${question.id}`}
         ref={setNodeRef}
         style={style}
         className={`rounded-lg border bg-white p-3 shadow-sm sm:rounded-xl sm:p-5 ${
@@ -1332,8 +1333,9 @@ function FormBuilderPageInner() {
     const si = sectionIndex ?? activeSectionIndex;
     if (si < 0 || si >= form.sections.length) return;
     const section = form.sections[si];
+    const newId = tempId();
     const newQ: QuestionData = {
-      id: tempId(),
+      id: newId,
       type,
       label: "",
       isRequired: false,
@@ -1352,6 +1354,9 @@ function FormBuilderPageInner() {
     newSections[si] = { ...section, questions: [...section.questions, newQ] };
     setForm({ ...form, sections: newSections });
     setShowTypeMenu(false);
+    setTimeout(() => {
+      document.getElementById(`question-${newId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
   }
 
   function updateQuestionInSection(sectionIndex: number, qIndex: number, updates: Partial<QuestionData>) {
@@ -2363,20 +2368,25 @@ function FormBuilderPageInner() {
             <button
               onClick={() => {
                 if (!form) return;
-                const lastSi = form.sections.length - 1;
-                const lastSection = form.sections[lastSi];
+                const si = activeSectionIndex;
+                if (si < 0 || si >= form.sections.length) return;
+                const section = form.sections[si];
+                const newId = tempId();
                 const newQ: QuestionData = {
-                  id: tempId(),
+                  id: newId,
                   type: "SHORT_TEXT" as QuestionType,
                   label: "Untitled Title",
                   isRequired: false,
-                  order: lastSection.questions.length,
+                  order: section.questions.length,
                   options: [],
                   config: { isTitle: true, titleDescription: "" },
                 };
                 const newSections = [...form.sections];
-                newSections[lastSi] = { ...lastSection, questions: [...lastSection.questions, newQ] };
+                newSections[si] = { ...section, questions: [...section.questions, newQ] };
                 setForm({ ...form, sections: newSections });
+                setTimeout(() => {
+                  document.getElementById(`question-${newId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 100);
               }}
               className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Add Title & Description"
             >
@@ -2387,20 +2397,25 @@ function FormBuilderPageInner() {
             <button
               onClick={() => {
                 if (!form) return;
-                const lastSi = form.sections.length - 1;
-                const lastSection = form.sections[lastSi];
+                const si = activeSectionIndex;
+                if (si < 0 || si >= form.sections.length) return;
+                const section = form.sections[si];
+                const newId = tempId();
                 const newQ: QuestionData = {
-                  id: tempId(),
+                  id: newId,
                   type: "FILE_UPLOAD" as QuestionType,
                   label: "Image / Video",
                   isRequired: false,
-                  order: lastSection.questions.length,
+                  order: section.questions.length,
                   options: [],
                   config: { isMedia: true },
                 };
                 const newSections = [...form.sections];
-                newSections[lastSi] = { ...lastSection, questions: [...lastSection.questions, newQ] };
+                newSections[si] = { ...section, questions: [...section.questions, newQ] };
                 setForm({ ...form, sections: newSections });
+                setTimeout(() => {
+                  document.getElementById(`question-${newId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 100);
               }}
               className="rounded-full p-2 text-gray-500 hover:bg-gray-100" title="Add Image/Video"
             >
