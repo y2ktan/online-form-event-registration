@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
+import { generateFormShortCode } from "@/lib/form-short-code";
+import { ensureFormShortCodes } from "@/lib/ensure-form-shortcode";
 
 // GET all forms for the current user (owned or collaborated)
 export async function GET(request: NextRequest) {
@@ -18,6 +20,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    await ensureFormShortCodes();
     let forms;
     if (session.role === "ADMIN") {
       // Admins see all forms
@@ -73,11 +76,13 @@ export async function POST(request: NextRequest) {
     const description = sanitize(body.description || "");
 
     // Create form first
+    const shortCode = await generateFormShortCode();
     const form = await prisma.form.create({
       data: {
         title,
         description,
         authorId: session.userId,
+        shortCode,
       },
     });
 

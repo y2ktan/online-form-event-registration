@@ -26,6 +26,7 @@ import {
   CloudOff,
   Loader2,
   ClipboardCopy,
+  Link2,
   Pencil,
   Users,
   ExternalLink,
@@ -143,6 +144,7 @@ interface FormData {
   title: string;
   description: string;
   published: boolean;
+  shortCode: string | null;
   collectPhone: boolean;
   phoneDescription: string;
   phoneTitle: string;
@@ -1811,6 +1813,21 @@ export default function FormBuilderPage() {
                 <ExternalLink className="h-4 w-4" />
                 <span className="hidden sm:inline">Open</span>
               </button>
+              {form.shortCode && (
+                <button
+                  onClick={() => {
+                    const shortUrl = `${window.location.origin}/f/${form.shortCode}`;
+                    navigator.clipboard.writeText(shortUrl);
+                    setSaveStatus("saved");
+                    setTimeout(() => setSaveStatus("idle"), 1500);
+                  }}
+                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+                  title={`Short URL: ${window.location.origin}/f/${form.shortCode}`}
+                >
+                  <Link2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Short URL</span>
+                </button>
+              )}
               <button
                 onClick={() => setShowThemeEditor(!showThemeEditor)}
                 className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm ${showThemeEditor ? "bg-indigo-100 text-indigo-700" : "text-gray-600 hover:bg-gray-100"}`}
