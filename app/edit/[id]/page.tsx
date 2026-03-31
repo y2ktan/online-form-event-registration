@@ -66,6 +66,7 @@ interface ResponseData {
     id: string;
     title: string;
     description: string;
+    collectPhone: boolean;
     questions: QuestionData[];
   };
   answers: AnswerData[];
@@ -181,7 +182,7 @@ function EditResponseForm() {
 
     // Client-side validation
     const errors: Record<string, string> = {};
-    if (!phoneNumber.trim()) {
+    if (data.form.collectPhone && !phoneNumber.trim()) {
       errors["phoneNumber"] = "Phone number is required.";
     }
     for (const q of data.form.questions) {
@@ -344,7 +345,8 @@ function EditResponseForm() {
             </div>
           )}
 
-          {/* Phone Number field */}
+          {/* Phone Number field — only if form collects phone */}
+          {data.form.collectPhone && (
           <div className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
             <label className="block text-base font-medium text-gray-900">
               Phone Number <span className="text-red-500">*</span>
@@ -372,6 +374,7 @@ function EditResponseForm() {
               </p>
             )}
           </div>
+          )}
 
           {/* Dynamic questions */}
           {nonPhoneQuestions.map((question) => (

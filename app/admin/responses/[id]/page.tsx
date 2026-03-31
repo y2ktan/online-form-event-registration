@@ -61,6 +61,7 @@ interface ResponseData {
     id: string;
     title: string;
     description: string;
+    collectPhone: boolean;
     questions: QuestionData[];
   };
   answers: AnswerData[];
@@ -90,7 +91,7 @@ export default function AdminEditResponsePage() {
     if (res.ok) {
       const respData = await res.json();
       setData(respData);
-      setPhoneNumber(respData.phoneNumber);
+      setPhoneNumber(respData.phoneNumber || "");
 
       const initialAnswers: Record<string, string> = {};
       respData.answers.forEach((ans: AnswerData) => {
@@ -152,7 +153,7 @@ export default function AdminEditResponsePage() {
     setFieldErrors({});
 
     const errors: Record<string, string> = {};
-    if (!phoneNumber.trim()) {
+    if (data.form.collectPhone && !phoneNumber.trim()) {
       errors["phoneNumber"] = "Phone number is required.";
     }
     for (const q of data.form.questions) {
@@ -315,6 +316,7 @@ export default function AdminEditResponsePage() {
             </div>
           )}
 
+          {data.form.collectPhone && (
           <div className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
             <label className="block text-base font-medium text-gray-900">
               Phone Number <span className="text-red-500">*</span>
@@ -337,6 +339,7 @@ export default function AdminEditResponsePage() {
               }`}
             />
           </div>
+          )}
 
           {nonPhoneQuestions.map((question) => (
             <div key={question.id} className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
