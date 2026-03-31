@@ -25,6 +25,7 @@ import {
 } from "@/lib/form-helpers";
 import { parseTheme, themeToCssVars, primaryTint, BUILT_IN_FONTS, type FormTheme } from "@/lib/theme";
 import { sanitizeRichText, isRichTextEmpty } from "@/lib/rich-text";
+import { maskValue } from "@/lib/masking";
 
 interface OptionData {
   id: string;
@@ -121,6 +122,7 @@ export default function PublicFormPage() {
   const [regUserLookupLoading, setRegUserLookupLoading] = useState(false);
   const [regUserLookupResult, setRegUserLookupResult] = useState<"idle" | "found" | "not_found">("idle");
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
+  const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -225,8 +227,14 @@ export default function PublicFormPage() {
       }
       const data = await res.json();
       if (data.found && data.values) {
-        setAnswers((prev) => ({ ...prev, ...data.values }));
-        setAutoFilledFields(new Set(Object.keys(data.values)));
+        const clearValues: Record<string, string> = data.values;
+        const masked: Record<string, string> = {};
+        for (const [qId, val] of Object.entries(clearValues)) {
+          masked[qId] = maskValue(val);
+        }
+        setOriginalValues((prev) => ({ ...prev, ...clearValues }));
+        setAnswers((prev) => ({ ...prev, ...masked }));
+        setAutoFilledFields(new Set(Object.keys(clearValues)));
         setRegUserLookedUp(true);
         setRegUserLookupResult("found");
       } else {
@@ -251,11 +259,32 @@ export default function PublicFormPage() {
         return next;
       });
       setAutoFilledFields(new Set());
+      setOriginalValues({});
       setRegUserLookedUp(false);
     }
   }
 
-  function updateAnswer(questionId: string, value: string) {
+  function updateAnswer(questionId: string, value: string, isUserEdit = false) {
+    // If user edits an auto-filled field, clear it completely so they can re-type
+    if (isUserEdit && autoFilledFields.has(questionId)) {
+      setAutoFilledFields((prev) => {
+        const next = new Set(prev);
+        next.delete(questionId);
+        return next;
+      });
+      setOriginalValues((prev) => {
+        const next = { ...prev };
+        delete next[questionId];
+        return next;
+      });
+      setAnswers((prev) => ({ ...prev, [questionId]: "" }));
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[questionId];
+        return next;
+      });
+      return;
+    }
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
     setFieldErrors((prev) => {
       const next = { ...prev };
@@ -440,7 +469,7 @@ export default function PublicFormPage() {
       const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
       if (config?.isPhoneNumber) continue;
       
-      const val = answers[q.id] || "";
+      const val = originalValues[q.id] ?? answers[q.id] ?? "";
       
       if (q.isRequired) {
         if (isGridType(q.type as any)) {
@@ -572,7 +601,7 @@ export default function PublicFormPage() {
         body: JSON.stringify({
           formId: form.id,
           phoneNumber: form.collectPhone ? phoneNumber : undefined,
-          answers: answers,
+          answers: { ...answers, ...originalValues },
           visitedSectionIds: [...new Set([...sectionHistory, currentSectionIndex])].map(
             (idx) => form.sections[idx]?.id
           ).filter(Boolean),
@@ -794,6 +823,8 @@ export default function PublicFormPage() {
                     }
                   };
 
+                  const isAutoFilled = autoFilledFields.has(question.id) && !isLookupField;
+
                   return (
                   <div>
                     <div className="relative">
@@ -801,10 +832,21 @@ export default function PublicFormPage() {
                         type="text"
                         value={answers[question.id] || ""}
                         onChange={(e) =>
-                          updateAnswer(question.id, e.target.value)
+                          updateAnswer(question.id, e.target.value, true)
                         }
+                        onFocus={() => {
+                          if (isAutoFilled) {
+                            updateAnswer(question.id, "", true);
+                          }
+                        }}
                         onBlur={(e) => handleLookupBlur(e.target.value)}
-                        className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        readOnly={isAutoFilled}
+                        aria-label={isAutoFilled ? `${question.label} — masked auto-filled value` : question.label}
+                        className={`block w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-1 ${
+                          isAutoFilled
+                            ? "border-green-300 bg-green-50 text-green-800 cursor-pointer focus:border-green-400 focus:ring-green-300"
+                            : "border-gray-300 text-gray-900 focus:border-indigo-500 focus:ring-indigo-500"
+                        }`}
                         placeholder={isPrimaryLookup ? `Enter your ${regUserConfig!.lookupColumn}` : isSecondaryLookup ? `Enter your ${regUserConfig!.secondaryLookupColumn}` : "Your answer"}
                       />
                       {isLookupField && regUserLookupLoading && (
