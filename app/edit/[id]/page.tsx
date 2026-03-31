@@ -657,6 +657,17 @@ function EditResponseForm() {
                 <Copy className="h-4 w-4" />
                 Copy Edit Link
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = `/edit/${responseId}?token=${editToken}`;
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-100"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Start New Edit
+              </button>
             </div>
           )}
         </div>

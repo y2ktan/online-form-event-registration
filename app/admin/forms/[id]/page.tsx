@@ -1393,7 +1393,7 @@ function FormBuilderPageInner() {
       label: `${src.label} (Copy)`,
       order: section.questions.length,
       options: src.options.map((o) => ({ ...o, id: tempId() })),
-      config: { ...src.config, locked: undefined },
+      config: { ...JSON.parse(JSON.stringify(src.config)), locked: undefined },
     };
     const newSections = [...form.sections];
     newSections[sectionIndex] = { ...section, questions: [...section.questions, newQ] };

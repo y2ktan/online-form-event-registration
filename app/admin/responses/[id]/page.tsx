@@ -235,7 +235,7 @@ export default function AdminEditResponsePage() {
       const timer = setTimeout(() => router.push(`/admin/forms/${data?.formId}?tab=responses`), 3000);
       return () => clearTimeout(timer);
     }
-  }, [submitted, router]);
+  }, [submitted, router, data]);
 
   // Fetch registered user mapping config
   useEffect(() => {
