@@ -469,12 +469,22 @@ function EditResponseForm() {
           try {
             const gridAnswers = val ? JSON.parse(val) : {};
             const rows = config.grid?.rows || [];
-            if (rows.length === 0) {
-              if (!val || val === "{}" || val === "[]") {
+            
+            if (q.type === "CHECKBOX_GRID") {
+              // For Checkbox Grid, at least one selection in the whole grid is required
+              let hasAnySelection = false;
+              for (const row of rows) {
+                const rowAnswer = gridAnswers[row.id];
+                if (Array.isArray(rowAnswer) && rowAnswer.length > 0) {
+                  hasAnySelection = true;
+                  break;
+                }
+              }
+              if (!hasAnySelection) {
                 errors[q.id] = `"${q.label}" is required.`;
-                continue;
               }
             } else {
+              // For Multiple Choice Grid, every row still requires a selection
               for (const row of rows) {
                 const rowAnswer = gridAnswers[row.id];
                 if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
@@ -635,7 +645,7 @@ function EditResponseForm() {
         for (const q of section.questions) {
           const cfg = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
           if (!cfg?.showOnSuccessPage) continue;
-          const raw = answers[q.id] ?? "";
+          const raw = originalValues[q.id] ?? answers[q.id] ?? "";
           if (!raw) continue;
           let display = raw;
           try {

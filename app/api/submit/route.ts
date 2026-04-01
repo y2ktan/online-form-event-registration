@@ -245,15 +245,24 @@ export async function POST(request: NextRequest) {
             const gridAnswers = JSON.parse(answerValue);
             const rows = config.grid?.rows || [];
             
-            if (rows.length === 0) {
-              // Should not happen with proper UI but safety first
-              if (!answer || answerValue === "{}" || answerValue === "[]") {
+            if (question.type === "CHECKBOX_GRID") {
+              // For Checkbox Grid, at least one selection in the whole grid is required
+              let hasAnySelection = false;
+              for (const row of rows) {
+                const rowAnswer = gridAnswers[row.id];
+                if (Array.isArray(rowAnswer) && rowAnswer.length > 0) {
+                  hasAnySelection = true;
+                  break;
+                }
+              }
+              if (!hasAnySelection) {
                 return NextResponse.json(
                   { error: `"${question.label}" is required.` },
                   { status: 400 }
                 );
               }
             } else {
+              // For Multiple Choice Grid, every row still requires a selection
               for (const row of rows) {
                 const rowAnswer = gridAnswers[row.id];
                 if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
