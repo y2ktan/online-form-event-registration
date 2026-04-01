@@ -56,6 +56,7 @@ interface QuestionConfig {
   validation?: ValidationConfig;
   routing?: RoutingConfig;
   hasOtherOption?: boolean;
+  showOnSuccessPage?: boolean;
   grid?: {
     rows: GridItem[];
     columns: GridItem[];
@@ -626,55 +627,95 @@ function EditResponseForm() {
     const editUrl = typeof window !== "undefined"
       ? `${window.location.origin}/edit/${responseId}?token=${editToken}`
       : "";
+
+    // Collect questions marked as showOnSuccessPage
+    const successFields: { label: string; value: string }[] = [];
+    if (data?.form) {
+      for (const section of data.form.sections) {
+        for (const q of section.questions) {
+          const cfg = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+          if (!cfg?.showOnSuccessPage) continue;
+          const raw = answers[q.id] ?? "";
+          if (!raw) continue;
+          let display = raw;
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) display = parsed.join(", ");
+          } catch { /* plain string */ }
+          successFields.push({ label: q.label, value: display });
+        }
+      }
+    }
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-        <div className="w-full max-w-md text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-            <CheckCircle className="h-10 w-10 text-green-500" />
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-xl">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
+            <CheckCircle className="h-10 w-10 text-green-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Response Updated!</h1>
-          <p className="mt-2 text-gray-500">Your changes have been saved successfully.</p>
+          <h1 className="mb-2 text-3xl font-bold text-gray-900">Response Updated!</h1>
+          <p className="mb-8 text-gray-600">Your changes have been saved successfully.</p>
 
           {data && (
-            <div className="mt-6 space-y-4">
-              <div className="rounded-xl bg-white p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Submission ID</p>
-                <p className="mt-1 text-2xl font-bold tracking-widest text-indigo-600">{data.shortCode}</p>
-                {data.phoneNumber && (
-                  <p className="mt-2 text-sm text-gray-500">
-                    <Phone className="mr-1 inline h-3.5 w-3.5" />
-                    {data.phoneNumber}
+            <>
+              <div className="mb-6 rounded-xl border border-gray-200 bg-white overflow-hidden">
+                <div className="bg-indigo-50 px-6 py-4 text-center">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-indigo-400">
+                    Submission ID
                   </p>
+                  <p className="text-3xl font-mono font-bold text-indigo-600 tracking-widest">
+                    {data.shortCode}
+                  </p>
+                </div>
+                {(data.phoneNumber || successFields.length > 0) && (
+                  <div className="divide-y divide-gray-100 px-6">
+                    {data.phoneNumber && (
+                      <div className="flex items-center justify-between py-3">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Phone</span>
+                        <span className="text-sm font-medium text-gray-900">{data.phoneNumber}</span>
+                      </div>
+                    )}
+                    {successFields.map((field, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-3">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">{field.label}</span>
+                        <span className="text-sm font-medium text-gray-900 text-right max-w-[60%] break-words">{field.value}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
-              <div className="rounded-xl bg-white p-5 shadow-sm">
-                <QRCodeSVG value={editUrl} size={180} className="mx-auto" />
-                <p className="mt-3 text-sm text-gray-500">Scan to edit your submission later</p>
+              <div className="mb-8 flex flex-col items-center justify-center space-y-3">
+                <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
+                  <QRCodeSVG value={editUrl} size={160} className="mx-auto" />
+                </div>
+                <p className="text-xs text-gray-400">Scan to edit your submission later</p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(editUrl);
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-              >
-                <Copy className="h-4 w-4" />
-                Copy Edit Link
-              </button>
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(editUrl);
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy Edit Link
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  window.location.href = `/edit/${responseId}?token=${editToken}`;
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-100"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Start New Edit
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = `/edit/${responseId}?token=${editToken}`;
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Start New Edit
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -690,40 +690,38 @@ export default function PublicFormPage() {
             Thank you for your response. Your submission has been recorded.
           </p>
 
-          <div className="mb-8 rounded-xl bg-gray-50 p-6">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
-              Submission ID
-            </p>
-            <p className="text-3xl font-mono font-bold text-indigo-600 tracking-widest">
-              {submissionData.shortCode}
-            </p>
-            {phoneNumber && (
-              <p className="mt-2 text-sm text-gray-500">
-                <Phone className="mr-1 inline h-3.5 w-3.5" />
-                {phoneNumber}
+          <div className="mb-6 rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="bg-indigo-50 px-6 py-4 text-center">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-indigo-400">
+                Submission ID
               </p>
-            )}
-            {successFields.length > 0 && (
-              <div className="mt-4 space-y-2 border-t border-gray-200 pt-4 text-left">
+              <p className="text-3xl font-mono font-bold text-indigo-600 tracking-widest">
+                {submissionData.shortCode}
+              </p>
+            </div>
+            {(phoneNumber || successFields.length > 0) && (
+              <div className="divide-y divide-gray-100 px-6">
+                {phoneNumber && (
+                  <div className="flex items-center justify-between py-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Phone</span>
+                    <span className="text-sm font-medium text-gray-900">{phoneNumber}</span>
+                  </div>
+                )}
                 {successFields.map((field, idx) => (
-                  <div key={idx}>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      {field.label}
-                    </p>
-                    <p className="text-sm font-medium text-gray-900">
-                      {field.value}
-                    </p>
+                  <div key={idx} className="flex items-center justify-between py-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">{field.label}</span>
+                    <span className="text-sm font-medium text-gray-900 text-right max-w-[60%] break-words">{field.value}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="mb-8 flex flex-col items-center justify-center space-y-4">
-            <div className="rounded-xl border-4 border-white bg-white p-2 shadow-md">
-              <QRCodeSVG value={editUrl} size={180} />
+          <div className="mb-8 flex flex-col items-center justify-center space-y-3">
+            <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
+              <QRCodeSVG value={editUrl} size={160} />
             </div>
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-gray-400">
               Scan to edit your submission later
             </p>
           </div>
