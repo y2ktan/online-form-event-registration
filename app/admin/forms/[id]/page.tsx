@@ -109,6 +109,7 @@ interface QuestionConfig {
   validation?: ValidationConfig;
   routing?: RoutingConfig;
   hasOtherOption?: boolean;
+  showOnSuccessPage?: boolean;
   grid?: {
     rows: GridItem[];
     columns: GridItem[];
@@ -332,6 +333,11 @@ function SortableQuestion({
               className="flex-1 border-b border-transparent text-base font-medium text-gray-900 focus:border-indigo-500 focus:outline-none"
               placeholder="Question"
             />
+            {question.config?.showOnSuccessPage && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-200" title="Shown on success page">
+                <Eye className="h-3 w-3" /> Success
+              </span>
+            )}
           </div>
 
           {/* Type selector */}
@@ -802,6 +808,18 @@ function SortableQuestion({
                     {question.config?.validationEnabled && <Check className="h-3 w-3 text-indigo-600" />}
                   </button>
                 )}
+                <button
+                  onClick={() => {
+                    const newConfig = { ...question.config };
+                    newConfig.showOnSuccessPage = !newConfig.showOnSuccessPage;
+                    updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex w-full items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  <span>Show on success page</span>
+                  {question.config?.showOnSuccessPage && <Check className="h-3 w-3 text-indigo-600" />}
+                </button>
               </div>
                 </div>
               </>

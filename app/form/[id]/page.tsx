@@ -52,6 +52,7 @@ interface QuestionConfig {
   validation?: ValidationConfig;
   routing?: RoutingConfig;
   hasOtherOption?: boolean;
+  showOnSuccessPage?: boolean;
   grid?: {
     rows: GridItem[];
     columns: GridItem[];
@@ -659,6 +660,25 @@ export default function PublicFormPage() {
   if (submitted && submissionData) {
     const editUrl = `${window.location.origin}/edit/${submissionData.responseId}?token=${submissionData.editToken}`;
 
+    // Collect questions marked as showOnSuccessPage
+    const successFields: { label: string; value: string }[] = [];
+    if (form) {
+      for (const section of form.sections) {
+        for (const q of section.questions) {
+          const cfg = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+          if (!cfg?.showOnSuccessPage) continue;
+          const raw = originalValues[q.id] ?? answers[q.id] ?? "";
+          if (!raw) continue;
+          let display = raw;
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) display = parsed.join(", ");
+          } catch { /* plain string */ }
+          successFields.push({ label: q.label, value: display });
+        }
+      }
+    }
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
         <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-xl">
@@ -682,6 +702,20 @@ export default function PublicFormPage() {
                 <Phone className="mr-1 inline h-3.5 w-3.5" />
                 {phoneNumber}
               </p>
+            )}
+            {successFields.length > 0 && (
+              <div className="mt-4 space-y-2 border-t border-gray-200 pt-4 text-left">
+                {successFields.map((field, idx) => (
+                  <div key={idx}>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      {field.label}
+                    </p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {field.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
