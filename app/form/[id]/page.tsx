@@ -677,6 +677,12 @@ export default function PublicFormPage() {
             <p className="text-3xl font-mono font-bold text-indigo-600 tracking-widest">
               {submissionData.shortCode}
             </p>
+            {phoneNumber && (
+              <p className="mt-2 text-sm text-gray-500">
+                <Phone className="mr-1 inline h-3.5 w-3.5" />
+                {phoneNumber}
+              </p>
+            )}
           </div>
 
           <div className="mb-8 flex flex-col items-center justify-center space-y-4">

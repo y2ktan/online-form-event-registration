@@ -640,6 +640,12 @@ function EditResponseForm() {
               <div className="rounded-xl bg-white p-5 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Submission ID</p>
                 <p className="mt-1 text-2xl font-bold tracking-widest text-indigo-600">{data.shortCode}</p>
+                {data.phoneNumber && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    <Phone className="mr-1 inline h-3.5 w-3.5" />
+                    {data.phoneNumber}
+                  </p>
+                )}
               </div>
 
               <div className="rounded-xl bg-white p-5 shadow-sm">
