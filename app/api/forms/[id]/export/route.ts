@@ -73,7 +73,16 @@ export async function GET(
     answers: r.answers.map((a) => ({ questionId: a.questionId, value: a.value })),
   }));
 
-  const csv = responsesToCsv(csvData, questions, form.collectPhone);
+  // Build base URL for absolute links (selfie photos)
+  const baseUrl =
+    process.env.APP_URL?.replace(/\/+$/, "") ||
+    (() => {
+      const proto = request.headers.get("x-forwarded-proto") || "https";
+      const host = request.headers.get("host") || "localhost:3000";
+      return `${proto}://${host}`;
+    })();
+
+  const csv = responsesToCsv(csvData, questions, form.collectPhone, baseUrl);
   const safeTitle = (form.title || "responses").replace(/[^a-zA-Z0-9-_ ]/g, "").slice(0, 50);
 
   return new NextResponse(csv, {

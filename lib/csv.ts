@@ -38,11 +38,12 @@ export function responsesToCsv(
   responses: CsvResponse[],
   questions: CsvQuestion[],
   includePhone: boolean,
+  baseUrl?: string,
 ): string {
   const headers: string[] = ["Submission ID"];
   if (includePhone) headers.push("Phone");
   headers.push("Submitted At", "Updated At");
-  for (const q of questions) headers.push(q.label || "Untitled");
+  for (const q of questions) headers.push(q.type === "SELFIE" ? "Profile Photo" : (q.label || "Untitled"));
 
   const rows: string[] = [headers.map(escapeCsvField).join(",")];
 
@@ -56,7 +57,7 @@ export function responsesToCsv(
 
     for (const q of questions) {
       const raw = answerMap.get(q.id) || "";
-      cols.push(formatAnswerForCsv(raw, q.type));
+      cols.push(formatAnswerForCsv(raw, q.type, baseUrl));
     }
 
     rows.push(cols.map(escapeCsvField).join(","));
@@ -66,8 +67,11 @@ export function responsesToCsv(
 }
 
 /** Format a stored answer value for human-readable CSV output. */
-function formatAnswerForCsv(value: string, questionType: string): string {
+function formatAnswerForCsv(value: string, questionType: string, baseUrl?: string): string {
   if (!value) return "";
+  if (questionType === "SELFIE" && value.startsWith("/")) {
+    return baseUrl ? `${baseUrl}${value}` : value;
+  }
   if (questionType === "CHECKBOX") {
     try {
       const arr = JSON.parse(value);
