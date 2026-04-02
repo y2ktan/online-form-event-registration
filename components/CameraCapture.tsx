@@ -18,6 +18,7 @@ export default function CameraCapture({ onCapture, onCancel }: CameraCaptureProp
   const [zoom, setZoom] = useState(1);
   const [capabilities, setCapabilities] = useState<MediaTrackCapabilities | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const blobRef = useRef<Blob | null>(null);
 
   const stopStream = useCallback(() => {
     if (streamRef.current) {
@@ -100,6 +101,13 @@ export default function CameraCapture({ onCapture, onCancel }: CameraCaptureProp
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
       setCapturedImage(dataUrl);
+
+      // Generate blob directly from canvas for reliable upload
+      canvas.toBlob(
+        (blob) => { blobRef.current = blob; },
+        "image/jpeg",
+        0.8
+      );
     }
   };
 
@@ -125,16 +133,27 @@ export default function CameraCapture({ onCapture, onCancel }: CameraCaptureProp
     }
   };
 
-  const handleConfirm = async () => {
+  const handleConfirm = () => {
     if (!capturedImage) return;
     stopStream();
-    const res = await fetch(capturedImage);
-    const blob = await res.blob();
-    if (blob) onCapture(blob);
+
+    if (blobRef.current) {
+      onCapture(blobRef.current);
+    } else {
+      // Fallback: manually convert data URL to Blob
+      const parts = capturedImage.split(",");
+      const mimeMatch = parts[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      const byteStr = atob(parts[1]);
+      const buf = new Uint8Array(byteStr.length);
+      for (let i = 0; i < byteStr.length; i++) buf[i] = byteStr.charCodeAt(i);
+      onCapture(new Blob([buf], { type: mime }));
+    }
   };
 
   const retake = () => {
     setCapturedImage(null);
+    blobRef.current = null;
   };
 
   if (hasPermission === false) {
