@@ -184,7 +184,7 @@ export default function CameraCapture({ onCapture, onCancel }: CameraCaptureProp
       )}
 
       {/* Camera live view - always mounted to preserve videoRef */}
-      <div className="relative flex-1 flex flex-col">
+      <div className="relative flex-1 min-h-0">
         {isLoading && !capturedImage && (
           <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/50">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
@@ -198,7 +198,7 @@ export default function CameraCapture({ onCapture, onCancel }: CameraCaptureProp
           muted
           onClick={handleTapToFocus}
           onTouchStart={handleTapToFocus}
-          className={`w-full h-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
+          className={`absolute inset-0 w-full h-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
         />
 
         {/* Top Controls */}
