@@ -216,7 +216,7 @@ function SortableQuestion({
   updateQuestion: (sectionIndex: number, qIndex: number, updates: Partial<QuestionData>) => void;
   removeQuestion: (sectionIndex: number, qIndex: number) => void;
   duplicateQuestion: (sectionIndex: number, qIndex: number) => void;
-  addOption: (sectionIndex: number, qIndex: number) => void;
+  addOption: (sectionIndex: number, qIndex: number, insertAtIndex?: number) => void;
   updateOption: (sectionIndex: number, qIndex: number, oIndex: number, value: string) => void;
   removeOption: (sectionIndex: number, qIndex: number, oIndex: number) => void;
   regUserHeaders?: string[];
@@ -498,6 +498,15 @@ function SortableQuestion({
                         </select>
                       </div>
                     )}
+                    <div className="flex justify-center -my-0.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addOption(sectionIndex, qIndex, oIndex + 1); }}
+                        className="text-xs text-gray-400 hover:text-indigo-600 flex items-center gap-0.5 py-1 px-2 rounded hover:bg-indigo-50 transition-colors"
+                        title="Insert option below"
+                      >
+                        <Plus className="h-3 w-3" /> Insert
+                      </button>
+                    </div>
                   </div>
                   );
                 })}
@@ -1483,18 +1492,24 @@ function FormBuilderPageInner() {
     }, 100);
   }
 
-  function addOptionInSection(sectionIndex: number, qIndex: number) {
+  function addOptionInSection(sectionIndex: number, qIndex: number, insertAtIndex?: number) {
     if (!form) return;
     const newSections = [...form.sections];
     const section = { ...newSections[sectionIndex] };
     const questions = [...section.questions];
     const q = { ...questions[qIndex], options: [...questions[qIndex].options] };
-    q.options.push({
+    const newOption = {
       id: tempId(),
       value: `Option ${q.options.length + 1}`,
-      order: q.options.length,
+      order: 0,
       group: "default",
-    });
+    };
+    if (insertAtIndex !== undefined) {
+      q.options.splice(insertAtIndex, 0, newOption);
+    } else {
+      q.options.push(newOption);
+    }
+    q.options.forEach((o, i) => (o.order = i));
     questions[qIndex] = q;
     section.questions = questions;
     newSections[sectionIndex] = section;

@@ -320,11 +320,11 @@ export default function PublicFormPage() {
 
     const section = form.sections[sectionIndex];
 
-    // Only auto-advance when all required fields in the section are filled
+    // Only auto-advance when all questions in the section are answered
     for (const q of section.questions) {
-      if (!q.isRequired) continue;
       const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
       if (config?.isPhoneNumber) continue;
+      if (config?.isTitle) continue;
       const val = originalValues[q.id] ?? updatedAnswers[q.id] ?? "";
       if (!val || !val.trim() || val === "[]") return;
     }
