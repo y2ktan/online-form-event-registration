@@ -51,6 +51,7 @@ interface QuestionConfig {
   validationEnabled?: boolean;
   validation?: ValidationConfig;
   routing?: RoutingConfig;
+  autoAdvance?: boolean;
   hasOtherOption?: boolean;
   showOnSuccessPage?: boolean;
   grid?: {
@@ -292,6 +293,58 @@ export default function PublicFormPage() {
       delete next[questionId];
       return next;
     });
+
+    // Handle auto-advance (defaults to true for MULTIPLE_CHOICE/DROPDOWN)
+    if (form && isUserEdit) {
+      let question: QuestionData | undefined;
+      for (const section of form.sections) {
+        question = section.questions.find((q) => q.id === questionId);
+        if (question) break;
+      }
+
+      if (question) {
+        const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+        if (config?.autoAdvance !== false && (question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN")) {
+          const updatedAnswers = { ...answers, [questionId]: value };
+          handleSectionTransition(question, updatedAnswers);
+        }
+      }
+    }
+  }
+
+  function handleSectionTransition(question: QuestionData, updatedAnswers: Record<string, string>) {
+    if (!form) return;
+    
+    const sectionIndex = form.sections.findIndex(s => s.questions.some(q => q.id === question.id));
+    if (sectionIndex === -1 || sectionIndex !== currentSectionIndex) return;
+
+    const section = form.sections[sectionIndex];
+    const sectionQuestions = section.questions.map((q) => ({
+      id: q.id,
+      type: q.type,
+      config: typeof q.config === "string" ? q.config : JSON.stringify(q.config),
+    }));
+
+    const result = resolveNextSection(
+      form.sections.map((s) => ({
+        id: s.id,
+        order: s.order,
+        routingConfig: typeof s.routingConfig === "string" ? s.routingConfig : JSON.stringify(s.routingConfig),
+      })),
+      sectionIndex,
+      sectionQuestions,
+      updatedAnswers
+    );
+
+    if (result.type === "SUBMIT") {
+      handleFinalSubmit();
+    } else {
+      const nextIdx = result.sectionIndex ?? sectionIndex + 1;
+      if (nextIdx === sectionIndex) return;
+      setSectionHistory((prev) => [...prev, currentSectionIndex]);
+      setCurrentSectionIndex(nextIdx);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function toggleCheckbox(questionId: string, optionValue: string) {
@@ -459,13 +512,13 @@ export default function PublicFormPage() {
 
   function validateCurrentSection(): boolean {
     if (!form) return false;
-    const section = form.sections[currentSectionIndex];
-    if (!section) return false;
-
+    
     setError("");
     setFieldErrors({});
-
     const errors: Record<string, string> = {};
+    const section = form.sections[currentSectionIndex];
+    if (!section) return true;
+
     for (const q of section.questions) {
       const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
       if (config?.isPhoneNumber) continue;
@@ -479,7 +532,6 @@ export default function PublicFormPage() {
             const rows = config.grid?.rows || [];
             
             if (q.type === "CHECKBOX_GRID") {
-              // For Checkbox Grid, at least one selection in the whole grid is required
               let hasAnySelection = false;
               for (const row of rows) {
                 const rowAnswer = gridAnswers[row.id];
@@ -492,7 +544,6 @@ export default function PublicFormPage() {
                 errors[q.id] = `"${q.label}" is required.`;
               }
             } else {
-              // For Multiple Choice Grid, every row still requires a selection
               for (const row of rows) {
                 const rowAnswer = gridAnswers[row.id];
                 if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
@@ -504,11 +555,9 @@ export default function PublicFormPage() {
           } catch {
             errors[q.id] = `"${q.label}" is required.`;
           }
-          continue;
         } else {
           if (!val || !val.trim() || val === "[]") {
             errors[q.id] = `"${q.label}" is required.`;
-            continue;
           }
         }
       }
@@ -551,7 +600,6 @@ export default function PublicFormPage() {
     );
 
     if (result.type === "SUBMIT") {
-      // Trigger submission
       handleFinalSubmit();
     } else {
       const nextIdx = result.sectionIndex ?? currentSectionIndex + 1;
@@ -586,10 +634,7 @@ export default function PublicFormPage() {
     e.preventDefault();
     if (!form) return;
 
-    const isLastSection = currentSectionIndex >= form.sections.length - 1;
-    const section = form.sections[currentSectionIndex];
-
-    // For single-section forms or last section with no routing, validate and submit directly
+    // For single-section forms, validate and submit directly
     if (form.sections.length === 1) {
       if (!validateCurrentSection()) return;
       await handleFinalSubmit();
@@ -765,15 +810,8 @@ export default function PublicFormPage() {
   const isMultiSection = form.sections.length > 1;
   const isFirstSection = currentSectionIndex === 0;
 
-  const nonPhoneQuestions = currentSection
-    ? currentSection.questions.filter((q) => {
-        const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
-        return !config?.isPhoneNumber;
-      })
-    : [];
-
-  const themeVars = themeToCssVars(form.theme);
   const pc = form.theme.primaryColor;
+  const themeVars = themeToCssVars(form.theme);
 
   return (
     <div className="min-h-screen py-4 sm:py-8" style={{ ...themeVars, backgroundColor: themeVars["--theme-bg"], fontFamily: themeVars["--theme-font"] } as React.CSSProperties}>
@@ -807,18 +845,6 @@ export default function PublicFormPage() {
           )}
         </div>
 
-        {/* Section header (only show if multi-section and section has a title) */}
-        {isMultiSection && currentSection && (currentSection.title || currentSection.description) && (
-          <div className="mb-4 bg-white p-4 shadow-sm sm:p-6 border-l-4" style={{ borderLeftColor: pc, borderRadius: themeVars["--theme-radius"] }}>
-            {currentSection.title && (
-              <h2 className="text-lg font-semibold text-gray-900">{currentSection.title}</h2>
-            )}
-            {currentSection.description && !isRichTextEmpty(currentSection.description) && (
-              <div className="mt-1 text-sm text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(currentSection.description) }} />
-            )}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
@@ -826,463 +852,481 @@ export default function PublicFormPage() {
             </div>
           )}
 
-          {/* Dynamic questions for current section */}
-          {nonPhoneQuestions.map((question) => {
-            const qConfig = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
-            if (qConfig?.isTitle) {
-              return (
-                <div key={question.id} className="bg-white p-4 shadow-sm sm:p-6" style={{ borderRadius: themeVars["--theme-radius"] }}>
-                  <h3 className="text-base font-medium text-gray-900">{question.label}</h3>
-                  {qConfig.titleDescription && !isRichTextEmpty(qConfig.titleDescription) && (
-                    <div className="mt-1 text-sm text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(qConfig.titleDescription) }} />
-                  )}
-                </div>
-              );
-            }
-            return (
-            <div key={question.id} className={`p-4 shadow-sm sm:p-6 ${autoFilledFields.has(question.id) && regUserConfig?.lookupQuestionId !== question.id ? "bg-green-50 ring-1 ring-green-200" : "bg-white"}`} style={{ borderRadius: themeVars["--theme-radius"] }}>
-              <label className="block text-base font-medium text-gray-900">
-                {question.label}
-                {question.isRequired && (
-                  <span className="text-red-500"> *</span>
+          {currentSection && (
+              <div key={currentSection.id} id={currentSection.id} className="space-y-4">
+                {/* Section header (only show if multi-section and section has a title/desc) */}
+                {isMultiSection && (currentSection.title || currentSection.description) && (
+                  <div className="mb-4 bg-white p-4 shadow-sm sm:p-6 border-l-4" style={{ borderLeftColor: pc, borderRadius: themeVars["--theme-radius"] }}>
+                    {currentSection.title && (
+                      <h2 className="text-lg font-semibold text-gray-900">{currentSection.title}</h2>
+                    )}
+                    {currentSection.description && !isRichTextEmpty(currentSection.description) && (
+                      <div className="mt-1 text-sm text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(currentSection.description) }} />
+                    )}
+                  </div>
                 )}
-                {autoFilledFields.has(question.id) && regUserConfig?.lookupQuestionId !== question.id && (
-                  <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                    <CheckCircle className="h-3 w-3" /> Auto-filled
-                  </span>
-                )}
-              </label>
 
-              <div className="mt-3">
-                {question.type === "SHORT_TEXT" && (() => {
-                  const isPrimaryLookup = regUserConfig?.lookupQuestionId === question.id;
-                  const isSecondaryLookup = regUserConfig?.secondaryLookupQuestionId === question.id;
-                  const isLookupField = isPrimaryLookup || isSecondaryLookup;
-                  const hasSecondary = !!(regUserConfig?.secondaryLookupColumn && regUserConfig?.secondaryLookupQuestionId);
-
-                  const handleLookupBlur = (val: string) => {
-                    if (!regUserConfig || !val) return;
-                    if (isPrimaryLookup) {
-                      const secVal = hasSecondary ? (answers[regUserConfig.secondaryLookupQuestionId!] || "") : undefined;
-                      regUserLookup(val, secVal);
-                    } else if (isSecondaryLookup) {
-                      const priVal = answers[regUserConfig.lookupQuestionId!] || "";
-                      if (priVal) regUserLookup(priVal, val);
-                    }
-                  };
-
-                  const isAutoFilled = autoFilledFields.has(question.id) && !isLookupField;
-
+                {/* Questions for this section */}
+                {currentSection.questions.filter((q: QuestionData) => {
+                  const qConfig = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+                  return !qConfig?.isPhoneNumber;
+                }).map((question) => {
+                  const qConfig = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+                  if (qConfig?.isTitle) {
+                    return (
+                      <div key={question.id} className="bg-white p-4 shadow-sm sm:p-6" style={{ borderRadius: themeVars["--theme-radius"] }}>
+                        <h3 className="text-base font-medium text-gray-900">{question.label}</h3>
+                        {qConfig.titleDescription && !isRichTextEmpty(qConfig.titleDescription) && (
+                          <div className="mt-1 text-sm text-gray-600 prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_a]:text-indigo-600 [&_a]:underline" dangerouslySetInnerHTML={{ __html: sanitizeRichText(qConfig.titleDescription) }} />
+                        )}
+                      </div>
+                    );
+                  }
                   return (
-                  <div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={answers[question.id] || ""}
-                        onChange={(e) =>
-                          updateAnswer(question.id, e.target.value, true)
-                        }
-                        onFocus={() => {
-                          if (isAutoFilled) {
-                            updateAnswer(question.id, "", true);
-                          }
-                        }}
-                        onBlur={(e) => handleLookupBlur(e.target.value)}
-                        readOnly={isAutoFilled}
-                        aria-label={isAutoFilled ? `${question.label} — masked auto-filled value` : question.label}
-                        className={`block w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-1 ${
-                          isAutoFilled
-                            ? "border-green-300 bg-green-50 text-green-800 cursor-pointer focus:border-green-400 focus:ring-green-300"
-                            : "border-gray-300 text-gray-900 focus:border-indigo-500 focus:ring-indigo-500"
-                        }`}
-                        placeholder={isPrimaryLookup ? `Enter your ${regUserConfig!.lookupColumn}` : isSecondaryLookup ? `Enter your ${regUserConfig!.secondaryLookupColumn}` : "Your answer"}
-                      />
-                      {isLookupField && regUserLookupLoading && (
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-                        </div>
+                    <div key={question.id} className={`p-4 shadow-sm sm:p-6 ${autoFilledFields.has(question.id) && regUserConfig?.lookupQuestionId !== question.id ? "bg-green-50 ring-1 ring-green-200" : "bg-white"}`} style={{ borderRadius: themeVars["--theme-radius"] }}>
+                      <label className="block text-base font-medium text-gray-900">
+                        {question.label}
+                        {question.isRequired && (
+                          <span className="text-red-500"> *</span>
+                        )}
+                        {autoFilledFields.has(question.id) && regUserConfig?.lookupQuestionId !== question.id && (
+                          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                            <CheckCircle className="h-3 w-3" /> Auto-filled
+                          </span>
+                        )}
+                      </label>
+
+                      <div className="mt-3">
+                        {question.type === "SHORT_TEXT" && (() => {
+                          const isPrimaryLookup = regUserConfig?.lookupQuestionId === question.id;
+                          const isSecondaryLookup = regUserConfig?.secondaryLookupQuestionId === question.id;
+                          const isLookupField = isPrimaryLookup || isSecondaryLookup;
+                          const hasSecondary = !!(regUserConfig?.secondaryLookupColumn && regUserConfig?.secondaryLookupQuestionId);
+
+                          const handleLookupBlur = (val: string) => {
+                            if (!regUserConfig || !val) return;
+                            if (isPrimaryLookup) {
+                              const secVal = hasSecondary ? (answers[regUserConfig.secondaryLookupQuestionId!] || "") : undefined;
+                              regUserLookup(val, secVal);
+                            } else if (isSecondaryLookup) {
+                              const priVal = answers[regUserConfig.lookupQuestionId!] || "";
+                              if (priVal) regUserLookup(priVal, val);
+                            }
+                          };
+
+                          const isAutoFilled = autoFilledFields.has(question.id) && !isLookupField;
+
+                          return (
+                            <div>
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  value={answers[question.id] || ""}
+                                  onChange={(e) =>
+                                    updateAnswer(question.id, e.target.value, true)
+                                  }
+                                  onFocus={() => {
+                                    if (isAutoFilled) {
+                                      updateAnswer(question.id, "", true);
+                                    }
+                                  }}
+                                  onBlur={(e) => handleLookupBlur(e.target.value)}
+                                  readOnly={isAutoFilled}
+                                  aria-label={isAutoFilled ? `${question.label} — masked auto-filled value` : question.label}
+                                  className={`block w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-1 ${
+                                    isAutoFilled
+                                      ? "border-green-300 bg-green-50 text-green-800 cursor-pointer focus:border-green-400 focus:ring-green-300"
+                                      : "border-gray-300 text-gray-900 focus:border-indigo-500 focus:ring-indigo-500"
+                                  }`}
+                                  placeholder={isPrimaryLookup ? `Enter your ${regUserConfig!.lookupColumn}` : isSecondaryLookup ? `Enter your ${regUserConfig!.secondaryLookupColumn}` : "Your answer"}
+                                />
+                                {isLookupField && regUserLookupLoading && (
+                                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                                  </div>
+                                )}
+                              </div>
+                              {isPrimaryLookup && (
+                                <div className="mt-1.5">
+                                  {regUserLookupResult === "found" && (
+                                    <p className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3.5 w-3.5" /> Profile found — fields auto-filled.</p>
+                                  )}
+                                  {regUserLookupResult === "idle" && !regUserLookupLoading && (
+                                    <p className="text-xs text-gray-400">
+                                      Enter your {regUserConfig!.lookupColumn}{hasSecondary ? ` and ${regUserConfig!.secondaryLookupColumn}` : ""} and click outside to look up your profile.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              {isSecondaryLookup && (
+                                <div className="mt-1.5">
+                                  {regUserLookupResult === "idle" && !regUserLookupLoading && (
+                                    <p className="text-xs text-gray-400">Used for profile verification.</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {question.type === "PARAGRAPH" && (
+                          <textarea
+                            value={answers[question.id] || ""}
+                            onChange={(e) =>
+                              updateAnswer(question.id, e.target.value, true)
+                            }
+                            rows={4}
+                            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            placeholder="Your answer"
+                          />
+                        )}
+
+                        {question.type === "MULTIPLE_CHOICE" && (() => {
+                          const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+                          const optionValues = new Set(question.options.map((o) => o.value));
+                          const isOtherSelected = config?.hasOtherOption && isOtherSelectedForRadio(answers[question.id], optionValues);
+                          return (
+                            <div className="space-y-2">
+                              {question.options.map((opt) => (
+                                <label
+                                  key={opt.id}
+                                  className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50 cursor-pointer"
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`q-${question.id}`}
+                                    value={opt.value}
+                                    checked={answers[question.id] === opt.value}
+                                    onChange={() => updateAnswer(question.id, opt.value, true)}
+                                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <span className="text-sm text-gray-700">
+                                    {opt.value}
+                                  </span>
+                                </label>
+                              ))}
+                              {config?.hasOtherOption && (
+                                <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50">
+                                  <input
+                                    type="radio"
+                                    name={`q-${question.id}`}
+                                    checked={isOtherSelected}
+                                    onChange={() => updateAnswer(question.id, otherText[question.id] || "", true)}
+                                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <span className="text-sm text-gray-500">Other:</span>
+                                  <input
+                                    type="text"
+                                    value={isOtherSelected ? (otherText[question.id] ?? answers[question.id] ?? "") : (otherText[question.id] || "")}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setOtherText((prev) => ({ ...prev, [question.id]: val }));
+                                      if (isOtherSelected) updateAnswer(question.id, val, true);
+                                    }}
+                                    onFocus={() => {
+                                      if (!isOtherSelected) updateAnswer(question.id, otherText[question.id] || "", true);
+                                    }}
+                                    className="flex-1 border-b border-gray-300 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                                    placeholder="Type your answer"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {question.type === "CHECKBOX" && (() => {
+                          const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+                          const optionValues = new Set(question.options.map((o) => o.value));
+                          const isOtherChecked = config?.hasOtherOption && isOtherCheckedForCheckbox(answers[question.id] || "[]", optionValues);
+                          return (
+                            <div className="space-y-2">
+                              {question.options.map((opt) => (
+                                <label
+                                  key={opt.id}
+                                  className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50 cursor-pointer"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isCheckboxChecked(question.id, opt.value)}
+                                    onChange={() => toggleCheckbox(question.id, opt.value)}
+                                    className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <span className="text-sm text-gray-700">
+                                    {opt.value}
+                                  </span>
+                                </label>
+                              ))}
+                              {config?.hasOtherOption && (
+                                <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50">
+                                  <input
+                                    type="checkbox"
+                                    checked={isOtherChecked}
+                                    onChange={() => {
+                                      setAnswers((prev) => ({
+                                        ...prev,
+                                        [question.id]: toggleOtherInCheckbox(prev[question.id] || "[]", optionValues, otherText[question.id] || "", isOtherChecked),
+                                      }));
+                                    }}
+                                    className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <span className="text-sm text-gray-500">Other:</span>
+                                  <input
+                                    type="text"
+                                    value={otherText[question.id] || ""}
+                                    onChange={(e) => {
+                                      const newVal = e.target.value;
+                                      setOtherText((prev) => ({ ...prev, [question.id]: newVal }));
+                                      if (isOtherChecked) {
+                                        setAnswers((prev) => ({
+                                          ...prev,
+                                          [question.id]: updateOtherTextInCheckbox(prev[question.id] || "[]", optionValues, newVal),
+                                        }));
+                                      }
+                                    }}
+                                    onFocus={() => {
+                                      if (!isOtherChecked) {
+                                        setAnswers((prev) => ({
+                                          ...prev,
+                                          [question.id]: toggleOtherInCheckbox(prev[question.id] || "[]", optionValues, otherText[question.id] || "", false),
+                                        }));
+                                      }
+                                    }}
+                                    className="flex-1 border-b border-gray-300 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                                    placeholder="Type your answer"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {question.type === "DROPDOWN" && (
+                          <div>
+                            <select
+                              value={answers[question.id] || ""}
+                              onChange={(e) => {
+                                updateAnswer(question.id, e.target.value, true);
+                                if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
+                                  regUserLookup(e.target.value);
+                                }
+                              }}
+                              className={`block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${answers[question.id] ? "text-gray-900" : "text-gray-400"}`}
+                            >
+                              <option value="" disabled className="text-gray-400">{regUserConfig?.lookupQuestionId === question.id ? `Select your ${regUserConfig.lookupColumn}` : "Choose"}</option>
+                              {question.options.map((opt) => (
+                                <option key={opt.id} value={opt.value}>
+                                  {opt.value}
+                                </option>
+                              ))}
+                            </select>
+                            {regUserConfig?.lookupQuestionId === question.id && (
+                              <div className="mt-1.5">
+                                {regUserLookupLoading && (
+                                  <p className="flex items-center gap-1 text-xs text-indigo-600"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /> Looking up profile…</p>
+                                )}
+                                {regUserLookupResult === "found" && (
+                                  <p className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3.5 w-3.5" /> Profile found — fields auto-filled.</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {question.type === "LINEAR_SCALE" && (
+                          <div className="flex items-center gap-3">
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <label
+                                key={n}
+                                className="flex flex-col items-center gap-1 cursor-pointer"
+                              >
+                                <input
+                                  type="radio"
+                                  name={`q-${question.id}`}
+                                  value={String(n)}
+                                  checked={answers[question.id] === String(n)}
+                                  onChange={() =>
+                                    updateAnswer(question.id, String(n), true)
+                                  }
+                                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span className="text-xs text-gray-500">{n}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+
+                        {question.type === "RATING" && (
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() =>
+                                  updateAnswer(question.id, String(n), true)
+                                }
+                                className="p-1"
+                              >
+                                <Star
+                                  className={`h-6 w-6 ${
+                                    Number(answers[question.id] || 0) >= n
+                                      ? "fill-yellow-400 text-yellow-400"
+                                      : "text-gray-300"
+                                  }`}
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {question.type === "DATE" && (
+                          <input
+                            type="date"
+                            value={answers[question.id] || ""}
+                            onChange={(e) =>
+                              updateAnswer(question.id, e.target.value, true)
+                            }
+                            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        )}
+
+                        {question.type === "TIME" && (
+                          <input
+                            type="time"
+                            value={answers[question.id] || ""}
+                            onChange={(e) =>
+                              updateAnswer(question.id, e.target.value, true)
+                            }
+                            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        )}
+
+                        {question.type === "SELFIE" && (
+                          <div className="space-y-4">
+                            {answers[question.id] ? (
+                              <div className="relative inline-block">
+                                <img
+                                  src={answers[question.id]}
+                                  alt="Captured selfie"
+                                  className="h-48 w-auto rounded-lg border object-cover shadow-sm"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => updateAnswer(question.id, "", true)}
+                                  className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow-md hover:bg-red-600"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShowCamera({ questionId: question.id, show: true })
+                                }
+                                className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-indigo-200 bg-indigo-50/50 py-8 text-indigo-600 transition-colors hover:bg-indigo-50"
+                              >
+                                <Camera className="h-6 w-6" />
+                                <span className="font-medium">Take a Selfie</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {question.type === "FILE_UPLOAD" && (
+                          <input
+                            type="file"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                updateAnswer(question.id, file.name, true);
+                              }
+                            }}
+                            className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+                          />
+                        )}
+
+                        {(question.type === "MULTIPLE_CHOICE_GRID" ||
+                          question.type === "CHECKBOX_GRID") && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse text-left text-sm">
+                              <thead>
+                                <tr>
+                                  <th className="border-b border-gray-200 py-3 pr-4 font-medium text-gray-500"></th>
+                                  {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.columns?.map((col: { id: string, value: string }) => (
+                                    <th key={col.id} className="border-b border-gray-200 px-4 py-3 text-center font-medium text-gray-500">
+                                      {col.value}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.rows?.map((row: { id: string, value: string }) => (
+                                  <tr key={row.id}>
+                                    <td className="py-4 pr-4 font-medium text-gray-900">{row.value}</td>
+                                    {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.columns?.map((col: { id: string, value: string }) => {
+                                      const isSelected = (() => {
+                                        const current = answers[question.id] || "{}";
+                                        try {
+                                          const gridAnswers = JSON.parse(current);
+                                          if (question.type === "MULTIPLE_CHOICE_GRID") {
+                                            return gridAnswers[row.id] === col.id;
+                                          } else {
+                                            return Array.isArray(gridAnswers[row.id]) && gridAnswers[row.id].includes(col.id);
+                                          }
+                                        } catch {
+                                          return false;
+                                        }
+                                      })();
+
+                                      return (
+                                        <td key={col.id} className="px-4 py-4 text-center">
+                                          <input
+                                            type={question.type === "MULTIPLE_CHOICE_GRID" ? "radio" : "checkbox"}
+                                            name={`grid-${question.id}-${row.id}`}
+                                            checked={isSelected}
+                                            onChange={() => {
+                                              const current = answers[question.id] || "{}";
+                                              let gridAnswers = {};
+                                              try {
+                                                gridAnswers = JSON.parse(current);
+                                              } catch {}
+
+                                              if (question.type === "MULTIPLE_CHOICE_GRID") {
+                                                gridAnswers = { ...gridAnswers, [row.id]: col.id };
+                                              } else {
+                                                const rowAnswers = Array.isArray((gridAnswers as any)[row.id]) ? [...(gridAnswers as any)[row.id]] : [];
+                                                if (rowAnswers.includes(col.id)) {
+                                                  (gridAnswers as any)[row.id] = rowAnswers.filter((id: string) => id !== col.id);
+                                                } else {
+                                                  (gridAnswers as any)[row.id] = [...rowAnswers, col.id];
+                                                }
+                                              }
+                                              updateAnswer(question.id, JSON.stringify(gridAnswers), true);
+                                            }}
+                                            className={`h-4 w-4 text-indigo-600 focus:ring-indigo-500 ${question.type === "CHECKBOX_GRID" ? "rounded" : ""}`}
+                                          />
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+
+                      {fieldErrors[question.id] && (
+                        <p className="mt-2 text-sm text-red-600">
+                          {fieldErrors[question.id]}
+                        </p>
                       )}
                     </div>
-                    {isPrimaryLookup && (
-                      <div className="mt-1.5">
-                        {regUserLookupResult === "found" && (
-                          <p className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3.5 w-3.5" /> Profile found — fields auto-filled.</p>
-                        )}
-                        {regUserLookupResult === "idle" && !regUserLookupLoading && (
-                          <p className="text-xs text-gray-400">
-                            Enter your {regUserConfig!.lookupColumn}{hasSecondary ? ` and ${regUserConfig!.secondaryLookupColumn}` : ""} and click outside to look up your profile.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {isSecondaryLookup && (
-                      <div className="mt-1.5">
-                        {regUserLookupResult === "idle" && !regUserLookupLoading && (
-                          <p className="text-xs text-gray-400">Used for profile verification.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
                   );
-                })()}
-
-                {question.type === "PARAGRAPH" && (
-                  <textarea
-                    value={answers[question.id] || ""}
-                    onChange={(e) =>
-                      updateAnswer(question.id, e.target.value)
-                    }
-                    rows={4}
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    placeholder="Your answer"
-                  />
-                )}
-
-                {question.type === "MULTIPLE_CHOICE" && (() => {
-                  const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
-                  const optionValues = new Set(question.options.map((o) => o.value));
-                  const isOtherSelected = config?.hasOtherOption && isOtherSelectedForRadio(answers[question.id], optionValues);
-                  return (
-                  <div className="space-y-2">
-                    {question.options.map((opt) => (
-                      <label
-                        key={opt.id}
-                        className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50 cursor-pointer"
-                      >
-                        <input
-                          type="radio"
-                          name={`q-${question.id}`}
-                          value={opt.value}
-                          checked={answers[question.id] === opt.value}
-                          onChange={() => updateAnswer(question.id, opt.value)}
-                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {opt.value}
-                        </span>
-                      </label>
-                    ))}
-                    {config?.hasOtherOption && (
-                      <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50">
-                        <input
-                          type="radio"
-                          name={`q-${question.id}`}
-                          checked={isOtherSelected}
-                          onChange={() => updateAnswer(question.id, otherText[question.id] || "")}
-                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-gray-500">Other:</span>
-                        <input
-                          type="text"
-                          value={isOtherSelected ? (otherText[question.id] ?? answers[question.id] ?? "") : (otherText[question.id] || "")}
-                          onChange={(e) => {
-                            setOtherText((prev) => ({ ...prev, [question.id]: e.target.value }));
-                            if (isOtherSelected) updateAnswer(question.id, e.target.value);
-                          }}
-                          onFocus={() => {
-                            if (!isOtherSelected) updateAnswer(question.id, otherText[question.id] || "");
-                          }}
-                          className="flex-1 border-b border-gray-300 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-                          placeholder="Type your answer"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  );
-                })()}
-
-                {question.type === "CHECKBOX" && (() => {
-                  const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
-                  const optionValues = new Set(question.options.map((o) => o.value));
-                  const isOtherChecked = config?.hasOtherOption && isOtherCheckedForCheckbox(answers[question.id] || "[]", optionValues);
-                  return (
-                  <div className="space-y-2">
-                    {question.options.map((opt) => (
-                      <label
-                        key={opt.id}
-                        className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isCheckboxChecked(question.id, opt.value)}
-                          onChange={() => toggleCheckbox(question.id, opt.value)}
-                          className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {opt.value}
-                        </span>
-                      </label>
-                    ))}
-                    {config?.hasOtherOption && (
-                      <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50">
-                        <input
-                          type="checkbox"
-                          checked={isOtherChecked}
-                          onChange={() => {
-                            setAnswers((prev) => ({
-                              ...prev,
-                              [question.id]: toggleOtherInCheckbox(prev[question.id] || "[]", optionValues, otherText[question.id] || "", isOtherChecked),
-                            }));
-                          }}
-                          className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-gray-500">Other:</span>
-                        <input
-                          type="text"
-                          value={otherText[question.id] || ""}
-                          onChange={(e) => {
-                            const newVal = e.target.value;
-                            setOtherText((prev) => ({ ...prev, [question.id]: newVal }));
-                            if (isOtherChecked) {
-                              setAnswers((prev) => ({
-                                ...prev,
-                                [question.id]: updateOtherTextInCheckbox(prev[question.id] || "[]", optionValues, newVal),
-                              }));
-                            }
-                          }}
-                          onFocus={() => {
-                            if (!isOtherChecked) {
-                              setAnswers((prev) => ({
-                                ...prev,
-                                [question.id]: toggleOtherInCheckbox(prev[question.id] || "[]", optionValues, otherText[question.id] || "", false),
-                              }));
-                            }
-                          }}
-                          className="flex-1 border-b border-gray-300 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-                          placeholder="Type your answer"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  );
-                })()}
-
-                {question.type === "DROPDOWN" && (
-                  <div>
-                    <select
-                      value={answers[question.id] || ""}
-                      onChange={(e) => {
-                        updateAnswer(question.id, e.target.value);
-                        if (regUserConfig?.lookupQuestionId === question.id && e.target.value) {
-                          regUserLookup(e.target.value);
-                        }
-                      }}
-                      className={`block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${answers[question.id] ? "text-gray-900" : "text-gray-400"}`}
-                    >
-                      <option value="" disabled className="text-gray-400">{regUserConfig?.lookupQuestionId === question.id ? `Select your ${regUserConfig.lookupColumn}` : "Choose"}</option>
-                      {question.options.map((opt) => (
-                        <option key={opt.id} value={opt.value}>
-                          {opt.value}
-                        </option>
-                      ))}
-                    </select>
-                    {regUserConfig?.lookupQuestionId === question.id && (
-                      <div className="mt-1.5">
-                        {regUserLookupLoading && (
-                          <p className="flex items-center gap-1 text-xs text-indigo-600"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /> Looking up profile…</p>
-                        )}
-                        {regUserLookupResult === "found" && (
-                          <p className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3.5 w-3.5" /> Profile found — fields auto-filled.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {question.type === "LINEAR_SCALE" && (
-                  <div className="flex items-center gap-3">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <label
-                        key={n}
-                        className="flex flex-col items-center gap-1 cursor-pointer"
-                      >
-                        <input
-                          type="radio"
-                          name={`q-${question.id}`}
-                          value={String(n)}
-                          checked={answers[question.id] === String(n)}
-                          onChange={() =>
-                            updateAnswer(question.id, String(n))
-                          }
-                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-xs text-gray-500">{n}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {question.type === "RATING" && (
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() =>
-                          updateAnswer(question.id, String(n))
-                        }
-                        className="p-1"
-                      >
-                        <Star
-                          className={`h-6 w-6 ${
-                            Number(answers[question.id] || 0) >= n
-                              ? "fill-yellow-400 text-yellow-400"
-                              : "text-gray-300"
-                          }`}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {question.type === "DATE" && (
-                  <input
-                    type="date"
-                    value={answers[question.id] || ""}
-                    onChange={(e) =>
-                      updateAnswer(question.id, e.target.value)
-                    }
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                )}
-
-                {question.type === "TIME" && (
-                  <input
-                    type="time"
-                    value={answers[question.id] || ""}
-                    onChange={(e) =>
-                      updateAnswer(question.id, e.target.value)
-                    }
-                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                )}
-
-                {question.type === "SELFIE" && (
-                  <div className="space-y-4">
-                    {answers[question.id] ? (
-                      <div className="relative inline-block">
-                        <img
-                          src={answers[question.id]}
-                          alt="Captured selfie"
-                          className="h-48 w-auto rounded-lg border object-cover shadow-sm"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => updateAnswer(question.id, "")}
-                          className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow-md hover:bg-red-600"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowCamera({ questionId: question.id, show: true })
-                        }
-                        className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-indigo-200 bg-indigo-50/50 py-8 text-indigo-600 transition-colors hover:bg-indigo-50"
-                      >
-                        <Camera className="h-6 w-6" />
-                        <span className="font-medium">Take a Selfie</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {question.type === "FILE_UPLOAD" && (
-                  <input
-                    type="file"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        updateAnswer(question.id, file.name);
-                      }
-                    }}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
-                  />
-                )}
-
-                {(question.type === "MULTIPLE_CHOICE_GRID" ||
-                  question.type === "CHECKBOX_GRID") && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-left text-sm">
-                      <thead>
-                        <tr>
-                          <th className="border-b border-gray-200 py-3 pr-4 font-medium text-gray-500"></th>
-                          {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.columns?.map((col: { id: string, value: string }) => (
-                            <th key={col.id} className="border-b border-gray-200 px-4 py-3 text-center font-medium text-gray-500">
-                              {col.value}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.rows?.map((row: { id: string, value: string }) => (
-                          <tr key={row.id}>
-                            <td className="py-4 pr-4 font-medium text-gray-900">{row.value}</td>
-                            {(typeof question.config === "string" ? JSON.parse(question.config) : question.config).grid?.columns?.map((col: { id: string, value: string }) => {
-                              const isSelected = (() => {
-                                const current = answers[question.id] || "{}";
-                                try {
-                                  const gridAnswers = JSON.parse(current);
-                                  if (question.type === "MULTIPLE_CHOICE_GRID") {
-                                    return gridAnswers[row.id] === col.id;
-                                  } else {
-                                    return Array.isArray(gridAnswers[row.id]) && gridAnswers[row.id].includes(col.id);
-                                  }
-                                } catch {
-                                  return false;
-                                }
-                              })();
-
-                              return (
-                                <td key={col.id} className="px-4 py-4 text-center">
-                                  <input
-                                    type={question.type === "MULTIPLE_CHOICE_GRID" ? "radio" : "checkbox"}
-                                    name={`grid-${question.id}-${row.id}`}
-                                    checked={isSelected}
-                                    onChange={() => {
-                                      setAnswers((prev) => {
-                                        const current = prev[question.id] || "{}";
-                                        let gridAnswers = {};
-                                        try {
-                                          gridAnswers = JSON.parse(current);
-                                        } catch {}
-
-                                        if (question.type === "MULTIPLE_CHOICE_GRID") {
-                                          gridAnswers = { ...gridAnswers, [row.id]: col.id };
-                                        } else {
-                                          const rowAnswers = Array.isArray((gridAnswers as any)[row.id]) ? [...(gridAnswers as any)[row.id]] : [];
-                                          if (rowAnswers.includes(col.id)) {
-                                            (gridAnswers as any)[row.id] = rowAnswers.filter((id: string) => id !== col.id);
-                                          } else {
-                                            (gridAnswers as any)[row.id] = [...rowAnswers, col.id];
-                                          }
-                                        }
-                                        return { ...prev, [question.id]: JSON.stringify(gridAnswers) };
-                                      });
-                                    }}
-                                    className={`h-4 w-4 text-indigo-600 focus:ring-indigo-500 ${question.type === "CHECKBOX_GRID" ? "rounded" : ""}`}
-                                  />
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                })}
               </div>
-
-              {fieldErrors[question.id] && (
-                <p className="mt-2 text-sm text-red-600">
-                  {fieldErrors[question.id]}
-                </p>
-              )}
-            </div>
-            );
-          })}
+          )}
 
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
