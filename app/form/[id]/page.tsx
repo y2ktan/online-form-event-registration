@@ -294,7 +294,7 @@ export default function PublicFormPage() {
       return next;
     });
 
-    // Handle auto-advance (defaults to true for MULTIPLE_CHOICE/DROPDOWN)
+    // Handle auto-advance (only when routing is enabled on the question)
     if (form && isUserEdit) {
       let question: QuestionData | undefined;
       for (const section of form.sections) {
@@ -304,7 +304,7 @@ export default function PublicFormPage() {
 
       if (question) {
         const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
-        if (config?.autoAdvance !== false && (question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN")) {
+        if (config?.routing?.enabled && config?.autoAdvance !== false && (question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN")) {
           const updatedAnswers = { ...answers, [questionId]: value };
           handleSectionTransition(question, updatedAnswers);
         }
@@ -319,6 +319,15 @@ export default function PublicFormPage() {
     if (sectionIndex === -1 || sectionIndex !== currentSectionIndex) return;
 
     const section = form.sections[sectionIndex];
+
+    // Only auto-advance when all required fields in the section are filled
+    for (const q of section.questions) {
+      if (!q.isRequired) continue;
+      const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+      if (config?.isPhoneNumber) continue;
+      const val = originalValues[q.id] ?? updatedAnswers[q.id] ?? "";
+      if (!val || !val.trim() || val === "[]") return;
+    }
     const sectionQuestions = section.questions.map((q) => ({
       id: q.id,
       type: q.type,

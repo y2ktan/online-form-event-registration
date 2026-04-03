@@ -387,7 +387,7 @@ export function validateFormRouting(
 
     if (routing.type === "OPTION_MATCH") {
       for (const [opt, dest] of Object.entries(routing.rules)) {
-        checkDestination(dest, `${ctx}, option "${opt}"`);
+        checkDestination(dest, `${ctx}, option "${opt === "__OTHER__" ? "Other" : opt}"`);
       }
     } else if (routing.type === "CHECKBOX") {
       for (const rule of routing.rules) {

@@ -787,25 +787,12 @@ function SortableQuestion({
                 <div className="absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-white shadow-xl ring-1 ring-black ring-opacity-5 z-20">
                 <div className="py-1">
                 {(question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN") && (
-                    <button
-                      onClick={() => {
-                        const newConfig = { ...question.config };
-                        newConfig.autoAdvance = !newConfig.autoAdvance;
-                        updateQuestion(sectionIndex, qIndex, { config: newConfig });
-                        setShowMoreMenu(false);
-                      }}
-                      className="flex w-full items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      <span>Auto-advance to next section</span>
-                      {(question.config?.autoAdvance !== false) && <Check className="h-3 w-3 text-indigo-600" />}
-                    </button>
-                )}
-                {(question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN") && (
                   <button
                     onClick={() => {
                       const newConfig = { ...question.config };
                       if (newConfig.routing?.enabled) {
                         delete newConfig.routing;
+                        delete newConfig.autoAdvance;
                       } else {
                         newConfig.routing = {
                           enabled: true,
@@ -821,6 +808,20 @@ function SortableQuestion({
                     <span>Go to section based on answer</span>
                     {question.config?.routing?.enabled && <Check className="h-3 w-3 text-indigo-600" />}
                   </button>
+                )}
+                {(question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN") && question.config?.routing?.enabled && (
+                    <button
+                      onClick={() => {
+                        const newConfig = { ...question.config };
+                        newConfig.autoAdvance = !newConfig.autoAdvance;
+                        updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                        setShowMoreMenu(false);
+                      }}
+                      className="flex w-full items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 pl-8"
+                    >
+                      <span>Auto-advance on select</span>
+                      {(question.config?.autoAdvance !== false) && <Check className="h-3 w-3 text-indigo-600" />}
+                    </button>
                 )}
                 {(question.type === "MULTIPLE_CHOICE" || question.type === "CHECKBOX" || question.type === "DROPDOWN") && (
                   <button
