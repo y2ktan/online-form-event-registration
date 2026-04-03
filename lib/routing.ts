@@ -128,6 +128,10 @@ function evaluateOptionMatch(routing: OptionMatchRouting, answer: string): strin
   if (trimmed && routing.rules[trimmed]) {
     return routing.rules[trimmed];
   }
+  // Fallback: if no exact option matched, check for "Other" routing
+  if (trimmed && routing.rules["__OTHER__"]) {
+    return routing.rules["__OTHER__"];
+  }
   return null;
 }
 

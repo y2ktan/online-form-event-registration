@@ -503,21 +503,62 @@ function SortableQuestion({
                 })}
                 {/* "Other" option row (non-editable label, removable) */}
                 {question.config?.hasOtherOption && (question.type === "MULTIPLE_CHOICE" || question.type === "CHECKBOX") && (
-                  <div className="flex items-center gap-2">
-                    {question.type === "MULTIPLE_CHOICE" && (
-                      <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      {question.type === "MULTIPLE_CHOICE" && (
+                        <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                      )}
+                      {question.type === "CHECKBOX" && (
+                        <div className="h-4 w-4 rounded border-2 border-gray-300" />
+                      )}
+                      <span className="text-sm text-gray-500 italic">Other...</span>
+                      <div className="flex-1 border-b border-dashed border-gray-300" />
+                      <button
+                        onClick={() => {
+                          const newConfig = { ...question.config, hasOtherOption: false };
+                          if (newConfig.routing?.enabled && (newConfig.routing as OptionMatchRouting).rules?.["__OTHER__"]) {
+                            const routing = { ...(newConfig.routing as OptionMatchRouting) };
+                            routing.rules = { ...routing.rules };
+                            delete routing.rules["__OTHER__"];
+                            newConfig.routing = routing;
+                          }
+                          updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                        }}
+                        className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {question.config?.routing?.enabled && (
+                      <div className="pl-6">
+                        <select
+                          value={(question.config.routing as OptionMatchRouting).rules["__OTHER__"] || "NEXT"}
+                          onChange={(e) => {
+                            const newConfig = { ...question.config };
+                            const routing = { ...(newConfig.routing as OptionMatchRouting) };
+                            routing.rules = { ...routing.rules };
+                            if (e.target.value === "NEXT") {
+                              delete routing.rules["__OTHER__"];
+                            } else {
+                              routing.rules["__OTHER__"] = e.target.value;
+                            }
+                            newConfig.routing = routing;
+                            updateQuestion(sectionIndex, qIndex, { config: newConfig });
+                          }}
+                          className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 focus:border-indigo-500 focus:outline-none"
+                        >
+                          <option value="NEXT">Continue to next section</option>
+                          <option value="SUBMIT">Submit form</option>
+                          {sections
+                            .filter((_, i) => i !== sectionIndex)
+                            .map((s) => (
+                              <option key={s.id} value={s.id}>
+                                Go to section: {s.title || `Section ${s.order + 1}`}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
                     )}
-                    {question.type === "CHECKBOX" && (
-                      <div className="h-4 w-4 rounded border-2 border-gray-300" />
-                    )}
-                    <span className="text-sm text-gray-500 italic">Other...</span>
-                    <div className="flex-1 border-b border-dashed border-gray-300" />
-                    <button
-                      onClick={() => updateQuestion(sectionIndex, qIndex, { config: { ...question.config, hasOtherOption: false } })}
-                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 )}
                 <div className="flex items-center gap-2">
