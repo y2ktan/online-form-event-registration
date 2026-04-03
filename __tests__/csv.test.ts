@@ -109,6 +109,28 @@ describe("responsesToCsv", () => {
 
   test("formats grid answers as key-value pairs", () => {
     const gridQ: CsvQuestion[] = [
+      { id: "g1", label: "Grid", type: "MULTIPLE_CHOICE_GRID", config: {
+        grid: {
+          rows: [{ id: "r1", value: "Row 1" }, { id: "r2", value: "Row 2" }],
+          columns: [{ id: "c1", value: "Col A" }, { id: "c2", value: "Col B" }],
+        },
+      }},
+    ];
+    const responses: CsvResponse[] = [
+      {
+        shortCode: "G1",
+        createdAt: "2025-01-01T00:00:00Z",
+        updatedAt: "2025-01-01T00:00:00Z",
+        answers: [{ questionId: "g1", value: '{"r1":"c1","r2":"c2"}' }],
+      },
+    ];
+    const csv = responsesToCsv(responses, gridQ, false);
+    const rows = csv.split("\n");
+    expect(rows[1]).toContain("Row 1: Col A; Row 2: Col B");
+  });
+
+  test("formats grid answers falling back to raw keys when no config", () => {
+    const gridQ: CsvQuestion[] = [
       { id: "g1", label: "Grid", type: "MULTIPLE_CHOICE_GRID" },
     ];
     const responses: CsvResponse[] = [
@@ -124,21 +146,26 @@ describe("responsesToCsv", () => {
     expect(rows[1]).toContain("Row1: Col A; Row2: Col B");
   });
 
-  test("handles checkbox grid answers", () => {
+  test("handles checkbox grid answers with UUID resolution", () => {
     const gridQ: CsvQuestion[] = [
-      { id: "g2", label: "CGrid", type: "CHECKBOX_GRID" },
+      { id: "g2", label: "CGrid", type: "CHECKBOX_GRID", config: {
+        grid: {
+          rows: [{ id: "r1", value: "Date 1" }],
+          columns: [{ id: "c1", value: "Morning" }, { id: "c2", value: "Afternoon" }],
+        },
+      }},
     ];
     const responses: CsvResponse[] = [
       {
         shortCode: "G2",
         createdAt: "2025-01-01T00:00:00Z",
         updatedAt: "2025-01-01T00:00:00Z",
-        answers: [{ questionId: "g2", value: '{"R1":"A,B"}' }],
+        answers: [{ questionId: "g2", value: '{"r1":["c1","c2"]}' }],
       },
     ];
     const csv = responsesToCsv(responses, gridQ, false);
     const rows = csv.split("\n");
-    expect(rows[1]).toContain("R1: A,B");
+    expect(rows[1]).toContain("Date 1: Morning, Afternoon");
   });
 
   test("handles empty questions list", () => {

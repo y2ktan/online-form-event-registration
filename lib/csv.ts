@@ -25,6 +25,7 @@ export interface CsvQuestion {
   id: string;
   label: string;
   type: string;
+  config?: Record<string, unknown> | string;
 }
 
 /**
@@ -57,7 +58,7 @@ export function responsesToCsv(
 
     for (const q of questions) {
       const raw = answerMap.get(q.id) || "";
-      cols.push(formatAnswerForCsv(raw, q.type, baseUrl));
+      cols.push(formatAnswerForCsv(raw, q.type, baseUrl, q.config));
     }
 
     rows.push(cols.map(escapeCsvField).join(","));
@@ -67,7 +68,7 @@ export function responsesToCsv(
 }
 
 /** Format a stored answer value for human-readable CSV output. */
-function formatAnswerForCsv(value: string, questionType: string, baseUrl?: string): string {
+function formatAnswerForCsv(value: string, questionType: string, baseUrl?: string, config?: Record<string, unknown> | string): string {
   if (!value) return "";
   if (questionType === "SELFIE" && value.startsWith("/")) {
     return baseUrl ? `${baseUrl}${value}` : value;
@@ -84,8 +85,19 @@ function formatAnswerForCsv(value: string, questionType: string, baseUrl?: strin
     try {
       const obj = JSON.parse(value);
       if (typeof obj === "object" && obj !== null) {
+        const cfg = typeof config === "string" ? JSON.parse(config) : config;
+        const rows: { id: string; value: string }[] = cfg?.grid?.rows || [];
+        const cols: { id: string; value: string }[] = cfg?.grid?.columns || [];
+        const rowMap = new Map(rows.map((r) => [r.id, r.value]));
+        const colMap = new Map(cols.map((c) => [c.id, c.value]));
         return Object.entries(obj)
-          .map(([row, val]) => `${row}: ${val}`)
+          .map(([rowId, val]) => {
+            const rowLabel = rowMap.get(rowId) || rowId;
+            if (Array.isArray(val)) {
+              return `${rowLabel}: ${val.map((v) => colMap.get(v as string) || v).join(", ")}`;
+            }
+            return `${rowLabel}: ${colMap.get(val as string) || val}`;
+          })
           .join("; ");
       }
     } catch {

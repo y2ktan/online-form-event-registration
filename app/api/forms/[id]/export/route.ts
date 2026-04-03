@@ -54,7 +54,7 @@ export async function GET(
           return true;
         }
       })
-      .map((q: { id: string; label: string; type: string }) => ({ id: q.id, label: q.label, type: q.type }))
+      .map((q: { id: string; label: string; type: string; config: string }) => ({ id: q.id, label: q.label, type: q.type, config: q.config }))
   );
 
   const responses = await prisma.response.findMany({
