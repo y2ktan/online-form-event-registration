@@ -226,6 +226,12 @@ function SortableQuestion({
   isLookupQuestion?: boolean;
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [focusedOptionIndex, setFocusedOptionIndex] = useState<number | null>(null);
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
+  const [focusedColIndex, setFocusedColIndex] = useState<number | null>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rowFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const colFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     attributes,
@@ -421,7 +427,12 @@ function SortableQuestion({
                     updateQuestion(sectionIndex, qIndex, { config: newConfig });
                   };
                   return (
-                  <div key={opt.id} className="space-y-1">
+                  <div
+                    key={opt.id}
+                    className="space-y-1"
+                    onFocusCapture={() => { if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current); setFocusedOptionIndex(oIndex); }}
+                    onBlurCapture={() => { focusTimeoutRef.current = setTimeout(() => setFocusedOptionIndex(null), 150); }}
+                  >
                     <div
                       className={`flex items-center gap-2 rounded-lg px-1 -mx-1 ${question.type === "DROPDOWN" && hasDefault && isDefaultSelected ? "bg-indigo-50 ring-1 ring-indigo-200" : ""}`}
                       onClick={question.type === "DROPDOWN" && hasDefault ? toggleDefault : undefined}
@@ -498,15 +509,17 @@ function SortableQuestion({
                         </select>
                       </div>
                     )}
-                    <div className="flex justify-center -my-0.5">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); addOption(sectionIndex, qIndex, oIndex + 1); }}
-                        className="text-xs text-gray-400 hover:text-indigo-600 flex items-center gap-0.5 py-1 px-2 rounded hover:bg-indigo-50 transition-colors"
-                        title="Insert option below"
-                      >
-                        <Plus className="h-3 w-3" /> Insert
-                      </button>
-                    </div>
+                    {focusedOptionIndex === oIndex && (
+                      <div className="flex justify-center -my-0.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); addOption(sectionIndex, qIndex, oIndex + 1); }}
+                          className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-0.5 py-1 px-2 rounded hover:bg-indigo-50 transition-colors"
+                          title="Insert option below"
+                        >
+                          <Plus className="h-3 w-3" /> Insert
+                        </button>
+                      </div>
+                    )}
                   </div>
                   );
                 })}
@@ -627,37 +640,61 @@ function SortableQuestion({
                       {(question.config.grid?.rows || [
                         { id: crypto.randomUUID(), value: "Row 1" }
                       ]).map((row, rIndex) => (
-                        <div key={row.id} className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400 w-4">{rIndex + 1}.</span>
-                          <input
-                            type="text"
-                            value={row.value}
-                            onChange={(e) => {
-                              const newGrid = { 
-                                rows: [...(question.config.grid?.rows || [{ id: crypto.randomUUID(), value: "Row 1" }])],
-                                columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
-                              };
-                              newGrid.rows[rIndex] = { ...row, value: e.target.value };
-                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
-                            }}
-                            className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-                            placeholder={`Row ${rIndex + 1}`}
-                          />
-                          <button
-                            onClick={() => {
-                              const rows = question.config.grid?.rows || [];
-                              if (rows.length <= 1) return;
-                              const newGrid = { 
-                                rows: rows.filter((_, i) => i !== rIndex),
-                                columns: question.config.grid?.columns || []
-                              };
-                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
-                            }}
-                            disabled={(question.config.grid?.rows?.length || 0) <= 1}
-                            className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                        <div
+                          key={row.id}
+                          className="space-y-1"
+                          onFocusCapture={() => { if (rowFocusTimeoutRef.current) clearTimeout(rowFocusTimeoutRef.current); setFocusedRowIndex(rIndex); }}
+                          onBlurCapture={() => { rowFocusTimeoutRef.current = setTimeout(() => setFocusedRowIndex(null), 150); }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 w-4">{rIndex + 1}.</span>
+                            <input
+                              type="text"
+                              value={row.value}
+                              onChange={(e) => {
+                                const newGrid = { 
+                                  rows: [...(question.config.grid?.rows || [{ id: crypto.randomUUID(), value: "Row 1" }])],
+                                  columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
+                                };
+                                newGrid.rows[rIndex] = { ...row, value: e.target.value };
+                                updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
+                              }}
+                              className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                              placeholder={`Row ${rIndex + 1}`}
+                            />
+                            <button
+                              onClick={() => {
+                                const rows = question.config.grid?.rows || [];
+                                if (rows.length <= 1) return;
+                                const newGrid = { 
+                                  rows: rows.filter((_, i) => i !== rIndex),
+                                  columns: question.config.grid?.columns || []
+                                };
+                                updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
+                              }}
+                              disabled={(question.config.grid?.rows?.length || 0) <= 1}
+                              className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {focusedRowIndex === rIndex && (
+                            <div className="flex justify-center -my-0.5">
+                              <button
+                                onClick={() => {
+                                  const currentGrid = question.config.grid || { rows: [], columns: [] };
+                                  const rows = [...(currentGrid.rows.length ? currentGrid.rows : [{ id: crypto.randomUUID(), value: "Row 1" }])];
+                                  rows.splice(rIndex + 1, 0, { id: crypto.randomUUID(), value: `Row ${rows.length + 1}` });
+                                  const newGrid = { rows, columns: currentGrid.columns.length ? currentGrid.columns : [{ id: crypto.randomUUID(), value: "Column 1" }] };
+                                  updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
+                                }}
+                                className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-0.5 py-1 px-2 rounded hover:bg-indigo-50 transition-colors"
+                                title="Insert row below"
+                              >
+                                <Plus className="h-3 w-3" /> Insert
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                       <button
@@ -685,43 +722,67 @@ function SortableQuestion({
                       {(question.config.grid?.columns || [
                         { id: crypto.randomUUID(), value: "Column 1" }
                       ]).map((col, cIndex) => (
-                        <div key={col.id} className="flex items-center gap-2">
-                          <div className="h-4 w-4 flex-shrink-0">
-                            {question.type === "MULTIPLE_CHOICE_GRID" ? (
-                              <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
-                            ) : (
-                              <div className="h-4 w-4 rounded border-2 border-gray-300" />
-                            )}
+                        <div
+                          key={col.id}
+                          className="space-y-1"
+                          onFocusCapture={() => { if (colFocusTimeoutRef.current) clearTimeout(colFocusTimeoutRef.current); setFocusedColIndex(cIndex); }}
+                          onBlurCapture={() => { colFocusTimeoutRef.current = setTimeout(() => setFocusedColIndex(null), 150); }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="h-4 w-4 flex-shrink-0">
+                              {question.type === "MULTIPLE_CHOICE_GRID" ? (
+                                <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                              ) : (
+                                <div className="h-4 w-4 rounded border-2 border-gray-300" />
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              value={col.value}
+                              onChange={(e) => {
+                                const newGrid = { 
+                                  rows: [...(question.config.grid?.rows || [{ id: crypto.randomUUID(), value: "Row 1" }])],
+                                  columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
+                                };
+                                newGrid.columns[cIndex] = { ...col, value: e.target.value };
+                                updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
+                              }}
+                              className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
+                              placeholder={`Column ${cIndex + 1}`}
+                            />
+                            <button
+                              onClick={() => {
+                                const cols = question.config.grid?.columns || [];
+                                if (cols.length <= 1) return;
+                                const newGrid = { 
+                                  rows: question.config.grid?.rows || [],
+                                  columns: cols.filter((_, i) => i !== cIndex)
+                                };
+                                updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
+                              }}
+                              disabled={(question.config.grid?.columns?.length || 0) <= 1}
+                              className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                          <input
-                            type="text"
-                            value={col.value}
-                            onChange={(e) => {
-                              const newGrid = { 
-                                rows: [...(question.config.grid?.rows || [{ id: crypto.randomUUID(), value: "Row 1" }])],
-                                columns: [...(question.config.grid?.columns || [{ id: crypto.randomUUID(), value: "Column 1" }])]
-                              };
-                              newGrid.columns[cIndex] = { ...col, value: e.target.value };
-                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
-                            }}
-                            className="flex-1 border-b border-transparent text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-                            placeholder={`Column ${cIndex + 1}`}
-                          />
-                          <button
-                            onClick={() => {
-                              const cols = question.config.grid?.columns || [];
-                              if (cols.length <= 1) return;
-                              const newGrid = { 
-                                rows: question.config.grid?.rows || [],
-                                columns: cols.filter((_, i) => i !== cIndex)
-                              };
-                              updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
-                            }}
-                            disabled={(question.config.grid?.columns?.length || 0) <= 1}
-                            className={`rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-0`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {focusedColIndex === cIndex && (
+                            <div className="flex justify-center -my-0.5">
+                              <button
+                                onClick={() => {
+                                  const currentGrid = question.config.grid || { rows: [], columns: [] };
+                                  const columns = [...(currentGrid.columns.length ? currentGrid.columns : [{ id: crypto.randomUUID(), value: "Column 1" }])];
+                                  columns.splice(cIndex + 1, 0, { id: crypto.randomUUID(), value: `Column ${columns.length + 1}` });
+                                  const newGrid = { rows: currentGrid.rows.length ? currentGrid.rows : [{ id: crypto.randomUUID(), value: "Row 1" }], columns };
+                                  updateQuestion(sectionIndex, qIndex, { config: { ...question.config, grid: newGrid } });
+                                }}
+                                className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-0.5 py-1 px-2 rounded hover:bg-indigo-50 transition-colors"
+                                title="Insert column below"
+                              >
+                                <Plus className="h-3 w-3" /> Insert
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                       <button
