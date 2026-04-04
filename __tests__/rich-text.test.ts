@@ -1,5 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { sanitizeRichText, stripHtml, isRichTextEmpty } from "../lib/rich-text";
+import { sanitize } from "../lib/sanitize";
 
 // ─── sanitizeRichText ───────────────────────────────────────────────
 
@@ -164,6 +165,96 @@ describe("isRichTextEmpty", () => {
   });
 });
 
+// ─── Multiline description preservation (bug fix) ──────────────────
+
+describe("sanitizeRichText — multiline description preservation", () => {
+  test("preserves separate <p> tags for multiline content (Tiptap output)", () => {
+    const tiptapHtml = "<p>时间：1700 - 2000</p><p>地点：慈济园区</p>";
+    const result = sanitizeRichText(tiptapHtml);
+    expect(result).toBe("<p>时间：1700 - 2000</p><p>地点：慈济园区</p>");
+  });
+
+  test("preserves <br> inside paragraphs", () => {
+    const html = "<p>Line 1<br>Line 2</p>";
+    expect(sanitizeRichText(html)).toBe("<p>Line 1<br>Line 2</p>");
+  });
+
+  test("preserves multiple paragraphs with formatting", () => {
+    const html = "<p><b>501</b> 與上人連線+浴佛集訓（志工）</p><p>时间：1700 - 2000</p><p>地点：慈济园区</p>";
+    const result = sanitizeRichText(html);
+    expect(result).toContain("<p><b>501</b>");
+    expect(result).toContain("<p>时间：1700 - 2000</p>");
+    expect(result).toContain("<p>地点：慈济园区</p>");
+  });
+
+  test("preserves empty paragraphs (blank lines between content)", () => {
+    const html = "<p>Line 1</p><p></p><p>Line 3</p>";
+    expect(sanitizeRichText(html)).toBe("<p>Line 1</p><p></p><p>Line 3</p>");
+  });
+
+  test("round-trip: sanitizeRichText output survives repeated sanitization", () => {
+    const original = "<p>时间：1700 - 2000</p><p>地点：慈济园区</p>";
+    const first = sanitizeRichText(original);
+    const second = sanitizeRichText(first);
+    expect(second).toBe(first);
+  });
+});
+
+// ─── sanitize vs sanitizeRichText contrast (the bug) ────────────────
+
+describe("sanitize strips multiline structure (old bug behavior)", () => {
+  test("sanitize collapses <p> tags into single line", () => {
+    const html = "<p>时间：1700 - 2000</p><p>地点：慈济园区</p>";
+    const stripped = sanitize(html);
+    // sanitize removes ALL tags — text becomes one line
+    expect(stripped).not.toContain("<p>");
+    expect(stripped).toBe("时间：1700 - 2000地点：慈济园区");
+  });
+
+  test("sanitizeRichText preserves the same input", () => {
+    const html = "<p>时间：1700 - 2000</p><p>地点：慈济园区</p>";
+    const preserved = sanitizeRichText(html);
+    expect(preserved).toContain("<p>");
+    expect(preserved).toBe(html);
+  });
+});
+
+// ─── Security: sanitizeRichText still blocks dangerous content ──────
+
+describe("sanitizeRichText — security in description context", () => {
+  test("strips script tags from pasted descriptions", () => {
+    const html = '<p>时间：1700</p><script>alert("xss")</script><p>地点：慈济园区</p>';
+    const result = sanitizeRichText(html);
+    expect(result).not.toContain("<script>");
+    expect(result).toContain("<p>时间：1700</p>");
+    expect(result).toContain("<p>地点：慈济园区</p>");
+  });
+
+  test("strips onerror attributes from injected tags", () => {
+    const html = '<p>text</p><img onerror="alert(1)" src="x"><p>more</p>';
+    const result = sanitizeRichText(html);
+    expect(result).not.toContain("<img");
+    expect(result).not.toContain("onerror");
+    expect(result).toContain("<p>text</p>");
+    expect(result).toContain("<p>more</p>");
+  });
+
+  test("strips event handlers from allowed tags", () => {
+    const html = '<p onclick="alert(1)">click me</p>';
+    const result = sanitizeRichText(html);
+    expect(result).not.toContain("onclick");
+    expect(result).toBe("<p>click me</p>");
+  });
+
+  test("strips iframe from descriptions", () => {
+    const html = '<p>before</p><iframe src="evil.com"></iframe><p>after</p>';
+    const result = sanitizeRichText(html);
+    expect(result).not.toContain("<iframe");
+    expect(result).toContain("<p>before</p>");
+    expect(result).toContain("<p>after</p>");
+  });
+});
+
 // ─── Performance ────────────────────────────────────────────────────
 
 describe("performance", () => {
@@ -172,6 +263,15 @@ describe("performance", () => {
     const start = performance.now();
     for (let i = 0; i < 10_000; i++) sanitizeRichText(html);
     expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  test("sanitizeRichText handles large multiline descriptions efficiently", () => {
+    // Simulate 100 paragraphs (typical large section description)
+    const paragraphs = Array.from({ length: 100 }, (_, i) => `<p>Line ${i}: ${"内容".repeat(50)}</p>`).join("");
+    const start = performance.now();
+    for (let i = 0; i < 1_000; i++) sanitizeRichText(paragraphs);
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(500);
   });
 
   test("stripHtml handles large input efficiently", () => {

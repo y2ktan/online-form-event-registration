@@ -32,6 +32,7 @@ Build a full-stack Form Builder application that allows Admins to create, manage
 - **Preview Mode:** A preview icon in the form editor toolbar allows the admin to temporarily view and try the form in a full-screen overlay without needing to publish it first.
 - **Responses Tab in Form Editor:** The form editor page includes a tab bar ("Questions" | "Responses"). The Responses tab lists all submissions for that form. Admin can edit or delete any submitted entry inline.
 - **Drag and Drop:** Admin can reorder questions inside the form builder by dragging and dropping them via a designated grip handle.
+- **Insert Between (New):** Hover-activated insert (+) buttons appear between questions and between sections in the form editor. Clicking the button opens a dropdown to select a question type (or insert a new section), inserting the new item at that exact position. Supports all question type categories and section insertion.
 - **Unique Submission Tracking (New):**
   - **Generation:** Each successful submission generates a unique 6-character alphanumeric short code (e.g., XJ39K2).
   - **Uniqueness:** Codes are unique within the scope of a specific Form ID.
@@ -95,6 +96,7 @@ The database must support the following relational structure:
 - [ ] Rate limiting is active on the submission endpoint.
 - [ ] Form auto-saves on change without a manual Save button.
 - [ ] Admin can reorder questions using drag-and-drop.
+- [ ] Admin can insert questions and sections between existing items via hover (+) buttons.
 - [ ] Admin can preview a form without publishing it.
 - [ ] Admin can view, edit, and delete responses from within the form editor page.
 - [ ] CRUD logic is unit tested using Vitest and passes successfully.

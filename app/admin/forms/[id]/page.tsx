@@ -191,6 +191,83 @@ function SectionContainer({ id, children, className, onClick, onFocus }: { id: s
   );
 }
 
+function InsertBetweenDivider({
+  menuKey,
+  insertMenu,
+  setInsertMenu,
+  onInsertQuestion,
+  onInsertSection,
+  getTypeIcon,
+  label,
+}: {
+  menuKey: string;
+  insertMenu: { key: string } | null;
+  setInsertMenu: (v: { key: string; sectionIndex: number; insertAtIndex: number } | null) => void;
+  onInsertQuestion: (type: QuestionType) => void;
+  onInsertSection?: () => void;
+  getTypeIcon: (type: QuestionType) => React.ReactNode;
+  label: string;
+}) {
+  const isOpen = insertMenu?.key === menuKey;
+  return (
+    <div className="group relative flex items-center py-1" aria-label={label}>
+      <div className="flex-1 border-t border-transparent group-hover:border-gray-300 transition-colors" />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setInsertMenu(isOpen ? null : { key: menuKey, sectionIndex: 0, insertAtIndex: 0 });
+        }}
+        className={`mx-2 flex h-6 w-6 items-center justify-center rounded-full border text-gray-400 transition-all ${
+          isOpen
+            ? "border-indigo-400 bg-indigo-50 text-indigo-600 scale-110"
+            : "border-transparent bg-transparent opacity-0 group-hover:opacity-100 group-hover:border-gray-300 group-hover:bg-white hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600"
+        }`}
+        title={label}
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+      <div className="flex-1 border-t border-transparent group-hover:border-gray-300 transition-colors" />
+      {isOpen && (
+        <div
+          className="absolute left-1/2 top-full z-30 -translate-x-1/2 mt-1 w-56 rounded-xl border bg-white py-2 shadow-xl max-h-[50vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {onInsertSection && (
+            <>
+              <button
+                onClick={() => onInsertSection()}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 font-medium"
+              >
+                <SeparatorHorizontal className="h-4 w-4" />
+                Insert Section
+              </button>
+              <div className="mx-2 my-1 border-t border-gray-100" />
+            </>
+          )}
+          {Object.entries(QUESTION_TYPE_CATEGORIES).map(([category, types]) => (
+            <div key={category}>
+              <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                {category}
+              </div>
+              {types.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => onInsertQuestion(t)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  {getTypeIcon(t)}
+                  {QUESTION_TYPE_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SortableQuestion({
   question,
   sectionIndex,
@@ -1158,6 +1235,7 @@ function FormBuilderPageInner() {
 
   const [form, setForm] = useState<FormData | null>(null);
   const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const [insertMenu, setInsertMenu] = useState<{ key: string; sectionIndex: number; insertAtIndex: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile">(
@@ -1232,6 +1310,25 @@ function FormBuilderPageInner() {
     });
     fetch("/api/admin/fonts").then(r => r.ok ? r.json() : []).then(setCustomFonts).catch(() => {});
   }, []);
+
+  // Close insert menu on outside click or Escape
+  useEffect(() => {
+    if (!insertMenu) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setInsertMenu(null);
+    }
+    function handleClick() {
+      setInsertMenu(null);
+    }
+    document.addEventListener("keydown", handleKey);
+    // Use timeout so the current click doesn't immediately close it
+    const timer = setTimeout(() => document.addEventListener("click", handleClick), 0);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.removeEventListener("click", handleClick);
+      clearTimeout(timer);
+    };
+  }, [insertMenu]);
 
   const loadedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1474,7 +1571,7 @@ function FormBuilderPageInner() {
     }
   }, [activeTab, fetchResponses]);
 
-  function addQuestion(type: QuestionType, sectionIndex?: number) {
+  function addQuestion(type: QuestionType, sectionIndex?: number, insertAtIndex?: number) {
     if (!form) return;
     pushHistoryNow();
     const si = sectionIndex ?? activeSectionIndex;
@@ -1498,9 +1595,17 @@ function FormBuilderPageInner() {
       } : {},
     };
     const newSections = [...form.sections];
-    newSections[si] = { ...section, questions: [...section.questions, newQ] };
+    const newQuestions = [...section.questions];
+    if (insertAtIndex !== undefined && insertAtIndex >= 0 && insertAtIndex <= newQuestions.length) {
+      newQuestions.splice(insertAtIndex, 0, newQ);
+      newQuestions.forEach((q, i) => (q.order = i));
+    } else {
+      newQuestions.push(newQ);
+    }
+    newSections[si] = { ...section, questions: newQuestions };
     setForm({ ...form, sections: newSections });
     setShowTypeMenu(false);
+    setInsertMenu(null);
     setTimeout(() => {
       document.getElementById(`question-${newId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 100);
@@ -1618,6 +1723,12 @@ function FormBuilderPageInner() {
     if (!form) return;
     pushHistoryNow();
     const insertAt = activeSectionIndex + 1;
+    insertSectionAt(insertAt);
+  }
+
+  function insertSectionAt(insertAt: number) {
+    if (!form) return;
+    pushHistoryNow();
     const newSection: SectionData = {
       id: tempId(),
       title: `Section ${form.sections.length + 1}`,
@@ -1631,6 +1742,7 @@ function FormBuilderPageInner() {
     newSections.forEach((s, i) => (s.order = i));
     setForm({ ...form, sections: newSections });
     setActiveSectionIndex(insertAt);
+    setInsertMenu(null);
   }
 
   function updateSection(sectionIndex: number, updates: Partial<SectionData>) {
@@ -2384,8 +2496,22 @@ function FormBuilderPageInner() {
                 globalQIndex += form.sections[si].questions.filter(q => !q.config?.isPhoneNumber).length;
               }
               const isActiveSection = activeSectionIndex === sIndex;
+              const filteredQuestions = section.questions.filter(q => !q.config?.isPhoneNumber);
               return (
-                <SectionContainer key={section.id} id={section.id} className={`space-y-3 min-h-[50px] rounded-xl transition-shadow ${form.sections.length > 1 && isActiveSection ? "ring-2 ring-indigo-300 ring-offset-2" : ""}`} onClick={() => setActiveSectionIndex(sIndex)} onFocus={() => setActiveSectionIndex(sIndex)}>
+                <div key={section.id}>
+                  {/* Insert section divider — before this section (only multi-section) */}
+                  {form.sections.length > 1 && sIndex > 0 && (
+                    <InsertBetweenDivider
+                      menuKey={`sec-before-${sIndex}`}
+                      insertMenu={insertMenu}
+                      setInsertMenu={setInsertMenu}
+                      onInsertQuestion={(type) => addQuestion(type, sIndex, 0)}
+                      onInsertSection={() => insertSectionAt(sIndex)}
+                      getTypeIcon={getTypeIcon}
+                      label="Insert between sections"
+                    />
+                  )}
+                  <SectionContainer id={section.id} className={`space-y-3 min-h-[50px] rounded-xl transition-shadow ${form.sections.length > 1 && isActiveSection ? "ring-2 ring-indigo-300 ring-offset-2" : ""}`} onClick={() => setActiveSectionIndex(sIndex)} onFocus={() => setActiveSectionIndex(sIndex)}>
                   {/* Section header */}
                   {form.sections.length > 1 && (
                     <div className="rounded-xl border-l-4 border-l-indigo-400 bg-indigo-50 p-4">
@@ -2417,38 +2543,53 @@ function FormBuilderPageInner() {
 
                   {/* Questions in this section */}
                   <SortableContext
-                    items={section.questions.filter(q => !q.config?.isPhoneNumber).map((q) => q.id)}
+                    items={filteredQuestions.map((q) => q.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {section.questions.filter(q => !q.config?.isPhoneNumber).map((question, qIdx) => (
-                      <SortableQuestion
-                        key={question.id}
-                        question={question}
-                        sectionIndex={sIndex}
-                        qIndex={section.questions.findIndex(q => q.id === question.id)}
-                        visualIndex={globalQIndex + qIdx}
-                        sections={form.sections}
-                        updateQuestion={updateQuestionInSection}
-                        removeQuestion={removeQuestionFromSection}
-                        duplicateQuestion={duplicateQuestionInSection}
-                        addOption={addOptionInSection}
-                        updateOption={updateOptionInSection}
-                        removeOption={removeOptionFromSection}
-                        regUserHeaders={regUserData?.lookupColumn ? regUserData.headers : undefined}
-                        regUserMapping={regUserData?.mappings[question.id]}
-                        regUserFirstRow={regUserData?.firstRow}
-                        isLookupQuestion={regUserData?.lookupQuestionId === question.id}
-                        onMappingChange={regUserData?.lookupColumn ? (qId, col) => {
-                          const newMappings = { ...regUserData.mappings };
-                          if (col) {
-                            newMappings[qId] = col;
-                          } else {
-                            delete newMappings[qId];
-                          }
-                          updateRegUserConfig({ mappings: newMappings });
-                        } : undefined}
-                      />
-                    ))}
+                    {filteredQuestions.map((question, qIdx) => {
+                      const realQIndex = section.questions.findIndex(q => q.id === question.id);
+                      return (
+                        <div key={question.id}>
+                          {/* Insert question divider — before this question (skip first, it's at section start) */}
+                          {qIdx > 0 && (
+                            <InsertBetweenDivider
+                              menuKey={`q-${sIndex}-${qIdx}`}
+                              insertMenu={insertMenu}
+                              setInsertMenu={setInsertMenu}
+                              onInsertQuestion={(type) => addQuestion(type, sIndex, realQIndex)}
+                              getTypeIcon={getTypeIcon}
+                              label="Insert question here"
+                            />
+                          )}
+                          <SortableQuestion
+                            question={question}
+                            sectionIndex={sIndex}
+                            qIndex={realQIndex}
+                            visualIndex={globalQIndex + qIdx}
+                            sections={form.sections}
+                            updateQuestion={updateQuestionInSection}
+                            removeQuestion={removeQuestionFromSection}
+                            duplicateQuestion={duplicateQuestionInSection}
+                            addOption={addOptionInSection}
+                            updateOption={updateOptionInSection}
+                            removeOption={removeOptionFromSection}
+                            regUserHeaders={regUserData?.lookupColumn ? regUserData.headers : undefined}
+                            regUserMapping={regUserData?.mappings[question.id]}
+                            regUserFirstRow={regUserData?.firstRow}
+                            isLookupQuestion={regUserData?.lookupQuestionId === question.id}
+                            onMappingChange={regUserData?.lookupColumn ? (qId, col) => {
+                              const newMappings = { ...regUserData.mappings };
+                              if (col) {
+                                newMappings[qId] = col;
+                              } else {
+                                delete newMappings[qId];
+                              }
+                              updateRegUserConfig({ mappings: newMappings });
+                            } : undefined}
+                          />
+                        </div>
+                      );
+                    })}
                   </SortableContext>
 
                   {/* Section routing — "After section X" dropdown (only for multi-section forms) */}
@@ -2476,6 +2617,7 @@ function FormBuilderPageInner() {
                     </div>
                   )}
                 </SectionContainer>
+                </div>
               );
             })}
           </div>
