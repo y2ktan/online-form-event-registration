@@ -141,6 +141,7 @@ export default function AdminEditResponsePage() {
   const [regUserLookupResult, setRegUserLookupResult] = useState<"idle" | "found" | "not_found">("idle");
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
+  const [completedSections, setCompletedSections] = useState<Set<number>>(new Set());
 
   const fetchResponse = useCallback(async () => {
     const res = await fetch(`/api/responses/${responseId}`);
@@ -303,6 +304,76 @@ export default function AdminEditResponsePage() {
     }
   }
 
+  // Check if all required questions in a given section are answered
+  function isSectionComplete(sectionIndex: number): boolean {
+    if (!data?.form) return false;
+    const section = data.form.sections[sectionIndex];
+    if (!section) return false;
+    for (const q of section.questions) {
+      const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+      if (config?.isPhoneNumber || config?.isTitle) continue;
+      if (!q.isRequired) continue;
+      const val = originalValues[q.id] ?? answers[q.id] ?? "";
+      if (!val || !val.trim() || val === "[]") return false;
+      if (isGridType(q.type as any)) {
+        try {
+          const gridAnswers = val ? JSON.parse(val) : {};
+          const rows = config.grid?.rows || [];
+          if (q.type === "CHECKBOX_GRID") {
+            let hasAny = false;
+            for (const row of rows) {
+              const ra = gridAnswers[row.id];
+              if (Array.isArray(ra) && ra.length > 0) { hasAny = true; break; }
+            }
+            if (!hasAny) return false;
+          } else {
+            for (const row of rows) {
+              const ra = gridAnswers[row.id];
+              if (!ra || (Array.isArray(ra) && ra.length === 0)) return false;
+            }
+          }
+        } catch { return false; }
+      }
+    }
+    return true;
+  }
+
+  // Track completed sections whenever answers change
+  useEffect(() => {
+    if (!data?.form) return;
+    const completed = new Set<number>();
+    for (let i = 0; i < data.form.sections.length; i++) {
+      if (isSectionComplete(i)) completed.add(i);
+    }
+    setCompletedSections(completed);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, originalValues, data]);
+
+  function getMaxNavigableSection(): number {
+    if (!data?.form) return 0;
+    for (let i = 0; i < data.form.sections.length; i++) {
+      if (!isSectionComplete(i)) return i;
+    }
+    return data.form.sections.length - 1;
+  }
+
+  function navigateToSection(targetIndex: number) {
+    if (!data?.form) return;
+    const maxNav = getMaxNavigableSection();
+    if (targetIndex > maxNav) return;
+    if (targetIndex === currentSectionIndex) return;
+    if (targetIndex > currentSectionIndex) {
+      setSectionHistory((prev) => [...prev, currentSectionIndex]);
+    } else {
+      const newHistory: number[] = [];
+      for (let i = 0; i < targetIndex; i++) newHistory.push(i);
+      setSectionHistory(newHistory);
+    }
+    setCurrentSectionIndex(targetIndex);
+    setFieldErrors({});
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function clearAutoFilledFields() {
     if (autoFilledFields.size > 0) {
       setAnswers((prev) => {
@@ -344,6 +415,67 @@ export default function AdminEditResponsePage() {
       delete next[questionId];
       return next;
     });
+
+    // Handle auto-advance (only when routing is enabled on the question)
+    if (data?.form && isUserEdit) {
+      let question: QuestionData | undefined;
+      for (const section of data.form.sections) {
+        question = section.questions.find((q) => q.id === questionId);
+        if (question) break;
+      }
+
+      if (question) {
+        const config = typeof question.config === "string" ? JSON.parse(question.config) : question.config;
+        if (config?.routing?.enabled && config?.autoAdvance !== false && (question.type === "MULTIPLE_CHOICE" || question.type === "DROPDOWN")) {
+          const updatedAnswers = { ...answers, [questionId]: value };
+          handleSectionTransition(question, updatedAnswers);
+        }
+      }
+    }
+  }
+
+  function handleSectionTransition(question: QuestionData, updatedAnswers: Record<string, string>) {
+    if (!data?.form) return;
+
+    const sectionIndex = data.form.sections.findIndex(s => s.questions.some(q => q.id === question.id));
+    if (sectionIndex === -1 || sectionIndex !== currentSectionIndex) return;
+
+    const section = data.form.sections[sectionIndex];
+
+    // Only auto-advance when all questions in the section are answered
+    for (const q of section.questions) {
+      const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+      if (config?.isPhoneNumber) continue;
+      if (config?.isTitle) continue;
+      const val = originalValues[q.id] ?? updatedAnswers[q.id] ?? "";
+      if (!val || !val.trim() || val === "[]") return;
+    }
+    const sectionQuestions = section.questions.map((q) => ({
+      id: q.id,
+      type: q.type,
+      config: typeof q.config === "string" ? q.config : JSON.stringify(q.config),
+    }));
+
+    const result = resolveNextSection(
+      data.form.sections.map((s) => ({
+        id: s.id,
+        order: s.order,
+        routingConfig: typeof s.routingConfig === "string" ? s.routingConfig : JSON.stringify(s.routingConfig),
+      })),
+      sectionIndex,
+      sectionQuestions,
+      updatedAnswers
+    );
+
+    if (result.type === "SUBMIT") {
+      handleFinalSubmit();
+    } else {
+      const nextIdx = result.sectionIndex ?? sectionIndex + 1;
+      if (nextIdx === sectionIndex) return;
+      setSectionHistory((prev) => [...prev, currentSectionIndex]);
+      setCurrentSectionIndex(nextIdx);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function toggleCheckbox(questionId: string, optionValue: string) {
@@ -658,17 +790,65 @@ export default function AdminEditResponsePage() {
           )}
           <p className="mt-3 text-sm text-red-500">* Required</p>
           {isMultiSection && (
-            <div className="mt-3 flex items-center gap-2">
-              <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                <div
-                  className="h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${((currentSectionIndex + 1) / data.form.sections.length) * 100}%`, backgroundColor: pc }}
-                />
+            <>
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className="h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${((currentSectionIndex + 1) / data.form.sections.length) * 100}%`, backgroundColor: pc }}
+                  />
+                </div>
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  {currentSectionIndex + 1} / {data.form.sections.length}
+                </span>
               </div>
-              <span className="text-xs text-gray-500 whitespace-nowrap">
-                {currentSectionIndex + 1} / {data.form.sections.length}
-              </span>
-            </div>
+              {/* Section navigation tabs */}
+              <div className="mt-3 -mx-1 overflow-x-auto scrollbar-hide">
+                <div className="flex gap-1 px-1 min-w-0">
+                  {data.form.sections.map((section, idx) => {
+                    const isCompleted = completedSections.has(idx);
+                    const isCurrent = idx === currentSectionIndex;
+                    const maxNav = getMaxNavigableSection();
+                    const isNavigable = idx <= maxNav;
+                    const isLocked = !isNavigable && !isCurrent;
+                    return (
+                      <button
+                        key={section.id}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => navigateToSection(idx)}
+                        className={`flex-shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all whitespace-nowrap ${
+                          isCurrent
+                            ? "text-white shadow-sm"
+                            : isCompleted
+                            ? "bg-green-50 text-green-700 hover:bg-green-100 ring-1 ring-green-200"
+                            : isNavigable
+                            ? "bg-orange-50 text-orange-700 hover:bg-orange-100 ring-1 ring-orange-200"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
+                        style={isCurrent ? { backgroundColor: pc } : undefined}
+                        title={
+                          isLocked
+                            ? "Complete previous sections first"
+                            : isCompleted
+                            ? `${section.title || `Section ${idx + 1}`} (completed)`
+                            : section.title || `Section ${idx + 1}`
+                        }
+                      >
+                        <span className="flex items-center gap-1">
+                          {isCompleted && !isCurrent && (
+                            <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                          )}
+                          <span className="truncate max-w-[80px] sm:max-w-[120px]">
+                            {section.title || `Section ${idx + 1}`}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
           )}
         </div>
 
