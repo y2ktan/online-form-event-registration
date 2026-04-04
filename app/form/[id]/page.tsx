@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import { 
@@ -90,6 +90,7 @@ interface FormData {
   phoneTitle: string;
   phonePlaceholder: string;
   theme: FormTheme;
+  autoSubmit: boolean;
   sections: SectionData[];
   questions: QuestionData[];
 }
@@ -125,6 +126,9 @@ export default function PublicFormPage() {
   const [regUserLookupResult, setRegUserLookupResult] = useState<"idle" | "found" | "not_found">("idle");
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
+  const [autoSubmitCountdown, setAutoSubmitCountdown] = useState<number | null>(null);
+  const autoSubmitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [completedSections, setCompletedSections] = useState<Set<number>>(new Set());
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -266,6 +270,91 @@ export default function PublicFormPage() {
     }
   }
 
+  // Check if all required questions in a given section are answered
+  function isSectionComplete(sectionIndex: number): boolean {
+    if (!form) return false;
+    const section = form.sections[sectionIndex];
+    if (!section) return false;
+    for (const q of section.questions) {
+      const config = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+      if (config?.isPhoneNumber || config?.isTitle) continue;
+      if (!q.isRequired) continue;
+      const val = originalValues[q.id] ?? answers[q.id] ?? "";
+      if (!val || !val.trim() || val === "[]") return false;
+      if (isGridType(q.type as any)) {
+        try {
+          const gridAnswers = val ? JSON.parse(val) : {};
+          const rows = config.grid?.rows || [];
+          if (q.type === "CHECKBOX_GRID") {
+            let hasAny = false;
+            for (const row of rows) {
+              const ra = gridAnswers[row.id];
+              if (Array.isArray(ra) && ra.length > 0) { hasAny = true; break; }
+            }
+            if (!hasAny) return false;
+          } else {
+            for (const row of rows) {
+              const ra = gridAnswers[row.id];
+              if (!ra || (Array.isArray(ra) && ra.length === 0)) return false;
+            }
+          }
+        } catch { return false; }
+      }
+    }
+    return true;
+  }
+
+  // Track completed sections whenever answers change
+  useEffect(() => {
+    if (!form) return;
+    const completed = new Set<number>();
+    for (let i = 0; i < form.sections.length; i++) {
+      if (isSectionComplete(i)) completed.add(i);
+    }
+    setCompletedSections(completed);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, originalValues, form]);
+
+  // Determine the highest section index the user can navigate to
+  function getMaxNavigableSection(): number {
+    if (!form) return 0;
+    // User can navigate up to the first incomplete section
+    for (let i = 0; i < form.sections.length; i++) {
+      if (!isSectionComplete(i)) return i;
+    }
+    return form.sections.length - 1;
+  }
+
+  function startAutoSubmitCountdown() {
+    if (autoSubmitTimerRef.current) return; // already running
+    setAutoSubmitCountdown(5);
+    autoSubmitTimerRef.current = setInterval(() => {
+      setAutoSubmitCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          cancelAutoSubmitCountdown();
+          handleFinalSubmit();
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }
+
+  function cancelAutoSubmitCountdown() {
+    if (autoSubmitTimerRef.current) {
+      clearInterval(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = null;
+    }
+    setAutoSubmitCountdown(null);
+  }
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSubmitTimerRef.current) clearInterval(autoSubmitTimerRef.current);
+    };
+  }, []);
+
   function updateAnswer(questionId: string, value: string, isUserEdit = false) {
     // If user edits an auto-filled field, clear it completely so they can re-type
     if (isUserEdit && autoFilledFields.has(questionId)) {
@@ -346,7 +435,11 @@ export default function PublicFormPage() {
     );
 
     if (result.type === "SUBMIT") {
-      handleFinalSubmit();
+      if (form.autoSubmit) {
+        startAutoSubmitCountdown();
+      } else {
+        handleFinalSubmit();
+      }
     } else {
       const nextIdx = result.sectionIndex ?? sectionIndex + 1;
       if (nextIdx === sectionIndex) return;
@@ -354,6 +447,26 @@ export default function PublicFormPage() {
       setCurrentSectionIndex(nextIdx);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  }
+
+  // Navigate to a specific section via section navigation
+  function navigateToSection(targetIndex: number) {
+    if (!form) return;
+    const maxNav = getMaxNavigableSection();
+    if (targetIndex > maxNav) return;
+    if (targetIndex === currentSectionIndex) return;
+    // Save current section index to history if going forward
+    if (targetIndex > currentSectionIndex) {
+      setSectionHistory((prev) => [...prev, currentSectionIndex]);
+    } else {
+      // Going backward: rebuild history as indices 0..targetIndex-1
+      const newHistory: number[] = [];
+      for (let i = 0; i < targetIndex; i++) newHistory.push(i);
+      setSectionHistory(newHistory);
+    }
+    setCurrentSectionIndex(targetIndex);
+    setFieldErrors({});
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function toggleCheckbox(questionId: string, optionValue: string) {
@@ -609,7 +722,11 @@ export default function PublicFormPage() {
     );
 
     if (result.type === "SUBMIT") {
-      handleFinalSubmit();
+      if (form.autoSubmit) {
+        startAutoSubmitCountdown();
+      } else {
+        handleFinalSubmit();
+      }
     } else {
       const nextIdx = result.sectionIndex ?? currentSectionIndex + 1;
       setSectionHistory((prev) => [...prev, currentSectionIndex]);
@@ -840,17 +957,65 @@ export default function PublicFormPage() {
           )}
           <p className="mt-3 text-sm text-red-500">* Required</p>
           {isMultiSection && (
-            <div className="mt-3 flex items-center gap-2">
-              <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                <div
-                  className="h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${((currentSectionIndex + 1) / form.sections.length) * 100}%`, backgroundColor: pc }}
-                />
+            <>
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className="h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${((currentSectionIndex + 1) / form.sections.length) * 100}%`, backgroundColor: pc }}
+                  />
+                </div>
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  {currentSectionIndex + 1} / {form.sections.length}
+                </span>
               </div>
-              <span className="text-xs text-gray-500 whitespace-nowrap">
-                {currentSectionIndex + 1} / {form.sections.length}
-              </span>
-            </div>
+              {/* Section navigation tabs */}
+              <div className="mt-3 -mx-1 overflow-x-auto scrollbar-hide">
+                <div className="flex gap-1 px-1 min-w-0">
+                  {form.sections.map((section, idx) => {
+                    const isCompleted = completedSections.has(idx);
+                    const isCurrent = idx === currentSectionIndex;
+                    const maxNav = getMaxNavigableSection();
+                    const isNavigable = idx <= maxNav;
+                    const isLocked = !isNavigable && !isCurrent;
+                    return (
+                      <button
+                        key={section.id}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => navigateToSection(idx)}
+                        className={`flex-shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all whitespace-nowrap ${
+                          isCurrent
+                            ? "text-white shadow-sm"
+                            : isCompleted
+                            ? "bg-green-50 text-green-700 hover:bg-green-100 ring-1 ring-green-200"
+                            : isNavigable
+                            ? "bg-orange-50 text-orange-700 hover:bg-orange-100 ring-1 ring-orange-200"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
+                        style={isCurrent ? { backgroundColor: pc } : undefined}
+                        title={
+                          isLocked
+                            ? "Complete previous sections first"
+                            : isCompleted
+                            ? `${section.title || `Section ${idx + 1}`} (completed)`
+                            : section.title || `Section ${idx + 1}`
+                        }
+                      >
+                        <span className="flex items-center gap-1">
+                          {isCompleted && !isCurrent && (
+                            <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                          )}
+                          <span className="truncate max-w-[80px] sm:max-w-[120px]">
+                            {section.title || `Section ${idx + 1}`}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
           )}
         </div>
 
@@ -1412,6 +1577,36 @@ export default function PublicFormPage() {
               }}
               onCancel={() => setShowCamera({ questionId: "", show: false })}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Submit Countdown Overlay */}
+      {autoSubmitCountdown !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: `${pc}15` }}>
+              <span className="text-3xl font-bold" style={{ color: pc }}>{autoSubmitCountdown}</span>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Auto-submitting...</h3>
+            <p className="text-sm text-gray-500 mb-5">Your form will be submitted in {autoSubmitCountdown} second{autoSubmitCountdown !== 1 ? "s" : ""}.</p>
+            <div className="flex gap-3 justify-center">
+              <button
+                type="button"
+                onClick={cancelAutoSubmitCountdown}
+                className="rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { cancelAutoSubmitCountdown(); handleFinalSubmit(); }}
+                className="rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-sm"
+                style={{ backgroundColor: pc }}
+              >
+                Submit Now
+              </button>
+            </div>
           </div>
         </div>
       )}

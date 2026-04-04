@@ -30,12 +30,3 @@ The agent skills for Copilot are located in `.copilot/skills/` with the followin
 - **next-cache-components** - Next.js caching strategies for components
 
 - **next-upgrade** - Guidance on upgrading to newer versions of Next.js
-
-## Windsurf Agent Skills
-The agent skills for Windsurf are located in `.windsurf/skills/` with the following available skills:
-
-- **next-best-practices** - Best practices and patterns for Next.js (same as Copilot)
-
-- **next-cache-components** - Next.js caching strategies for components
-
-- **next-upgrade** - Guidance on upgrading to newer versions of Next.js

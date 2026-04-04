@@ -153,6 +153,7 @@ interface FormData {
   phonePlaceholder: string;
   theme: FormTheme;
   notifyEmails: string;
+  autoSubmit: boolean;
   sections: SectionData[];
   questions: QuestionData[];
 }
@@ -1298,7 +1299,7 @@ function FormBuilderPageInner() {
           questions,
         });
       }
-      setForm({ ...data, theme: parseTheme(data.theme), notifyEmails: data.notifyEmails || "", sections, questions });
+      setForm({ ...data, theme: parseTheme(data.theme), notifyEmails: data.notifyEmails || "", autoSubmit: data.autoSubmit ?? false, sections, questions });
     }
   }, [formId]);
 
@@ -1333,6 +1334,7 @@ function FormBuilderPageInner() {
             phonePlaceholder: form.phonePlaceholder,
             theme: serializeTheme(form.theme),
             notifyEmails: form.notifyEmails,
+            autoSubmit: form.autoSubmit,
             sections: form.sections.map((s) => ({
               id: s.id,
               title: s.title,
@@ -2351,6 +2353,30 @@ function FormBuilderPageInner() {
                 placeholder="email1@example.com, email2@example.com"
               />
             </div>
+
+            {/* Auto-Submit Setting */}
+            {form.sections.length > 1 && (
+              <div className="rounded-lg bg-white p-4 shadow-sm sm:rounded-xl sm:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Auto-Submit</h3>
+                    <p className="text-xs text-gray-500 mt-1">Automatically submit the form 5 seconds after the last section is completed. Users can still submit manually or cancel the countdown.</p>
+                  </div>
+                  <button
+                    onClick={() => setForm({ ...form, autoSubmit: !form.autoSubmit })}
+                    className={`relative h-5 w-9 rounded-full transition-colors flex-shrink-0 ml-4 ${
+                      form.autoSubmit ? "bg-indigo-600" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                        form.autoSubmit ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
 
             {form.sections.map((section, sIndex) => {
               let globalQIndex = 0;

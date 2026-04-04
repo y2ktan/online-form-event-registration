@@ -36,6 +36,7 @@ model Form {
   phonePlaceholder String @default("Enter your phone number")
   theme        String   @default("{}") // JSON string for form theme customization
   notifyEmails String   @default("") // Comma-separated emails to notify on submission
+  autoSubmit   Boolean  @default(false) // Auto-submit after last section completed (5s countdown)
   authorId    String
   author      User       @relation(fields: [authorId], references: [id])
   createdAt   DateTime   @default(now())

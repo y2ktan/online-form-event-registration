@@ -112,6 +112,10 @@ describe("Forms API CRUD", () => {
     prismaMock.question.deleteMany.mockResolvedValue({ count: 0 });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prismaMock.question.create.mockResolvedValue({ id: "q1", formId: "form-1", type: "SHORT_TEXT", label: "Q1", isRequired: false, order: 0, config: "{}" } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prismaMock.question.findMany.mockResolvedValue([] as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (prismaMock.section as any).findFirst.mockResolvedValue({ id: "sec-1", formId: "form-1", title: "Section 1", order: 0 });
 
     const req = new NextRequest("http://localhost:3000/api/forms/form-1", {
       method: "PUT",
