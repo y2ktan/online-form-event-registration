@@ -1019,7 +1019,7 @@ export default function AdminEditResponsePage() {
                               name={`q-${question.id}`}
                               value={opt.value}
                               checked={answers[question.id] === opt.value}
-                              onChange={() => updateAnswer(question.id, opt.value)}
+                              onChange={() => updateAnswer(question.id, opt.value, true)}
                               className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
                             />
                             <span className="text-sm text-gray-700">
@@ -1033,7 +1033,7 @@ export default function AdminEditResponsePage() {
                               type="radio"
                               name={`q-${question.id}`}
                               checked={isOtherSelected}
-                              onChange={() => updateAnswer(question.id, otherText[question.id] || "")}
+                              onChange={() => updateAnswer(question.id, otherText[question.id] || "", true)}
                               className="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
                             />
                             <span className="text-sm text-gray-500">Other:</span>
@@ -1042,10 +1042,10 @@ export default function AdminEditResponsePage() {
                               value={isOtherSelected ? (otherText[question.id] ?? answers[question.id] ?? "") : (otherText[question.id] || "")}
                               onChange={(e) => {
                                 setOtherText((prev) => ({ ...prev, [question.id]: e.target.value }));
-                                if (isOtherSelected) updateAnswer(question.id, e.target.value);
+                                if (isOtherSelected) updateAnswer(question.id, e.target.value, true);
                               }}
                               onFocus={() => {
-                                if (!isOtherSelected) updateAnswer(question.id, otherText[question.id] || "");
+                                if (!isOtherSelected) updateAnswer(question.id, otherText[question.id] || "", true);
                               }}
                               className="flex-1 border-b border-gray-300 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
                               placeholder="Type your answer"
@@ -1125,7 +1125,7 @@ export default function AdminEditResponsePage() {
                   {question.type === "DROPDOWN" && (
                     <select
                       value={answers[question.id] || ""}
-                      onChange={(e) => updateAnswer(question.id, e.target.value)}
+                      onChange={(e) => updateAnswer(question.id, e.target.value, true)}
                       className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
                       <option value="">Choose</option>
