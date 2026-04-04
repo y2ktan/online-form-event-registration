@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import { 
@@ -127,6 +127,55 @@ export default function PublicFormPage() {
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [completedSections, setCompletedSections] = useState<Set<number>>(new Set());
+
+  // Routing-graph walk: which sections are reachable given current answers
+  const reachableSectionIndices = useMemo(() => {
+    if (!form?.sections?.length) return new Set<number>([0]);
+    const sections = form.sections;
+    const combinedAnswers = { ...originalValues, ...answers };
+    const path = new Set<number>();
+    let current = 0;
+    const visited = new Set<number>();
+    while (current < sections.length && !visited.has(current)) {
+      path.add(current);
+      visited.add(current);
+      // Stop walking if this section still has unanswered required questions
+      const section = sections[current];
+      const incomplete = section.questions.some((q) => {
+        const cfg = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+        if (cfg?.isPhoneNumber || cfg?.isTitle) return false;
+        if (!q.isRequired) return false;
+        const val = combinedAnswers[q.id] ?? "";
+        return !val || !val.trim() || val === "[]";
+      });
+      if (incomplete) break;
+      const sectionQuestions = section.questions.map((q) => ({
+        id: q.id,
+        type: q.type,
+        config: typeof q.config === "string" ? q.config : JSON.stringify(q.config),
+      }));
+      const result = resolveNextSection(
+        sections.map((s) => ({
+          id: s.id,
+          order: s.order,
+          routingConfig: typeof s.routingConfig === "string"
+            ? s.routingConfig
+            : JSON.stringify(s.routingConfig),
+        })),
+        current,
+        sectionQuestions,
+        combinedAnswers
+      );
+      if (result.type === "SUBMIT") break;
+      current = result.sectionIndex ?? current + 1;
+    }
+    return path;
+  }, [form?.sections, answers, originalValues]);
+
+  const reachableSorted = useMemo(
+    () => Array.from(reachableSectionIndices).sort((a, b) => a - b),
+    [reachableSectionIndices]
+  );
 
   const fetchForm = useCallback(async () => {
     const res = await fetch(`/api/forms/${formId}`);
@@ -313,14 +362,13 @@ export default function PublicFormPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answers, originalValues, form]);
 
-  // Determine the highest section index the user can navigate to
+  // Determine the highest section index the user can navigate to (routing-aware)
   function getMaxNavigableSection(): number {
-    if (!form) return 0;
-    // User can navigate up to the first incomplete section
-    for (let i = 0; i < form.sections.length; i++) {
-      if (!isSectionComplete(i)) return i;
+    if (!form || reachableSorted.length === 0) return 0;
+    for (const idx of reachableSorted) {
+      if (!completedSections.has(idx)) return idx;
     }
-    return form.sections.length - 1;
+    return reachableSorted[reachableSorted.length - 1];
   }
 
   function updateAnswer(questionId: string, value: string, isUserEdit = false) {
@@ -416,16 +464,18 @@ export default function PublicFormPage() {
   // Navigate to a specific section via section navigation
   function navigateToSection(targetIndex: number) {
     if (!form) return;
+    if (!reachableSectionIndices.has(targetIndex)) return;
     const maxNav = getMaxNavigableSection();
-    if (targetIndex > maxNav) return;
+    const targetPos = reachableSorted.indexOf(targetIndex);
+    const maxNavPos = reachableSorted.indexOf(maxNav);
+    if (targetPos > maxNavPos) return;
     if (targetIndex === currentSectionIndex) return;
     // Save current section index to history if going forward
     if (targetIndex > currentSectionIndex) {
       setSectionHistory((prev) => [...prev, currentSectionIndex]);
     } else {
-      // Going backward: rebuild history as indices 0..targetIndex-1
-      const newHistory: number[] = [];
-      for (let i = 0; i < targetIndex; i++) newHistory.push(i);
+      // Going backward: rebuild history up to targetIndex
+      const newHistory = reachableSorted.filter((i) => i < targetIndex);
       setSectionHistory(newHistory);
     }
     setCurrentSectionIndex(targetIndex);
@@ -918,25 +968,17 @@ export default function PublicFormPage() {
           <p className="mt-3 text-sm text-red-500">* Required</p>
           {isMultiSection && (
             <>
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                  <div
-                    className="h-1.5 rounded-full transition-all duration-300"
-                    style={{ width: `${((currentSectionIndex + 1) / form.sections.length) * 100}%`, backgroundColor: pc }}
-                  />
-                </div>
-                <span className="text-xs text-gray-500 whitespace-nowrap">
-                  {currentSectionIndex + 1} / {form.sections.length}
-                </span>
-              </div>
               {/* Section navigation tabs */}
               <div className="mt-3 -mx-1 overflow-x-auto scrollbar-hide">
                 <div className="flex gap-1 px-1 min-w-0">
                   {form.sections.map((section, idx) => {
+                    if (!reachableSectionIndices.has(idx)) return null;
                     const isCompleted = completedSections.has(idx);
                     const isCurrent = idx === currentSectionIndex;
                     const maxNav = getMaxNavigableSection();
-                    const isNavigable = idx <= maxNav;
+                    const targetPos = reachableSorted.indexOf(idx);
+                    const maxNavPos = reachableSorted.indexOf(maxNav);
+                    const isNavigable = targetPos <= maxNavPos;
                     const isLocked = !isNavigable && !isCurrent;
                     return (
                       <button

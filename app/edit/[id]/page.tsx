@@ -149,6 +149,7 @@ function EditResponseForm() {
   const reachableSectionIndices = useMemo(() => {
     if (!data?.form?.sections?.length) return new Set<number>([0]);
     const sections = data.form.sections;
+    const combinedAnswers = { ...originalValues, ...answers };
     const path = new Set<number>();
     let current = 0;
     const visited = new Set<number>();
@@ -156,6 +157,14 @@ function EditResponseForm() {
       path.add(current);
       visited.add(current);
       const section = sections[current];
+      const incomplete = section.questions.some((q) => {
+        const cfg = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+        if (cfg?.isPhoneNumber || cfg?.isTitle) return false;
+        if (!q.isRequired) return false;
+        const val = combinedAnswers[q.id] ?? "";
+        return !val || !val.trim() || val === "[]";
+      });
+      if (incomplete) break;
       const sectionQuestions = section.questions.map((q) => ({
         id: q.id,
         type: q.type,
@@ -171,13 +180,18 @@ function EditResponseForm() {
         })),
         current,
         sectionQuestions,
-        { ...originalValues, ...answers }
+        combinedAnswers
       );
       if (result.type === "SUBMIT") break;
       current = result.sectionIndex ?? current + 1;
     }
     return path;
   }, [data?.form?.sections, answers, originalValues]);
+
+  const reachableSorted = useMemo(
+    () => Array.from(reachableSectionIndices).sort((a, b) => a - b),
+    [reachableSectionIndices]
+  );
 
   const [showCamera, setShowCamera] = useState<{
     questionId: string;
@@ -392,16 +406,17 @@ function EditResponseForm() {
 
   function getMaxNavigableSection(): number {
     if (!data?.form) return 0;
-    for (let i = 0; i < data.form.sections.length; i++) {
-      if (!isSectionComplete(i)) return i;
+    for (const idx of reachableSorted) {
+      if (!isSectionComplete(idx)) return idx;
     }
-    return data.form.sections.length - 1;
+    return reachableSorted[reachableSorted.length - 1] ?? 0;
   }
 
   function navigateToSection(targetIndex: number) {
     if (!data?.form) return;
+    if (!reachableSectionIndices.has(targetIndex)) return;
     const maxNav = getMaxNavigableSection();
-    if (targetIndex > maxNav) return;
+    if (reachableSorted.indexOf(targetIndex) > reachableSorted.indexOf(maxNav)) return;
     if (targetIndex === currentSectionIndex) return;
     if (targetIndex > currentSectionIndex) {
       setSectionHistory((prev) => [...prev, currentSectionIndex]);
@@ -940,24 +955,6 @@ function EditResponseForm() {
           <p className="mt-3 text-sm text-red-500">* Required</p>
           {isMultiSection && (
             <>
-              {(() => {
-                const reachableArray = Array.from(reachableSectionIndices).sort((a, b) => a - b);
-                const posInPath = reachableArray.indexOf(currentSectionIndex) + 1;
-                const totalInPath = reachableArray.length;
-                return (
-                  <div className="mt-3 flex items-center gap-2">
-                    <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                      <div
-                        className="h-1.5 rounded-full transition-all duration-300"
-                        style={{ width: `${(posInPath / totalInPath) * 100}%`, backgroundColor: pc }}
-                      />
-                    </div>
-                    <span className="text-xs text-gray-500 whitespace-nowrap">
-                      {posInPath} / {totalInPath}
-                    </span>
-                  </div>
-                );
-              })()}
               {/* Section navigation tabs */}
               <div className="mt-3 -mx-1 overflow-x-auto scrollbar-hide">
                 <div className="flex gap-1 px-1 min-w-0">
@@ -966,7 +963,7 @@ function EditResponseForm() {
                     const isCompleted = completedSections.has(idx);
                     const isCurrent = idx === currentSectionIndex;
                     const maxNav = getMaxNavigableSection();
-                    const isNavigable = idx <= maxNav;
+                    const isNavigable = reachableSorted.indexOf(idx) <= reachableSorted.indexOf(maxNav);
                     const isLocked = !isNavigable && !isCurrent;
                     return (
                       <button

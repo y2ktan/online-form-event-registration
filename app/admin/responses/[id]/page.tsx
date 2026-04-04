@@ -147,6 +147,7 @@ export default function AdminEditResponsePage() {
   const reachableSectionIndices = useMemo(() => {
     if (!data?.form?.sections?.length) return new Set<number>([0]);
     const sections = data.form.sections;
+    const combinedAnswers = { ...originalValues, ...answers };
     const path = new Set<number>();
     let current = 0;
     const visited = new Set<number>();
@@ -154,6 +155,14 @@ export default function AdminEditResponsePage() {
       path.add(current);
       visited.add(current);
       const section = sections[current];
+      const incomplete = section.questions.some((q) => {
+        const cfg = typeof q.config === "string" ? JSON.parse(q.config) : q.config;
+        if (cfg?.isPhoneNumber || cfg?.isTitle) return false;
+        if (!q.isRequired) return false;
+        const val = combinedAnswers[q.id] ?? "";
+        return !val || !val.trim() || val === "[]";
+      });
+      if (incomplete) break;
       const sectionQuestions = section.questions.map((q) => ({
         id: q.id,
         type: q.type,
@@ -169,13 +178,18 @@ export default function AdminEditResponsePage() {
         })),
         current,
         sectionQuestions,
-        { ...originalValues, ...answers }
+        combinedAnswers
       );
       if (result.type === "SUBMIT") break;
       current = result.sectionIndex ?? current + 1;
     }
     return path;
   }, [data?.form?.sections, answers, originalValues]);
+
+  const reachableSorted = useMemo(
+    () => Array.from(reachableSectionIndices).sort((a, b) => a - b),
+    [reachableSectionIndices]
+  );
 
   const fetchResponse = useCallback(async () => {
     const res = await fetch(`/api/responses/${responseId}`);
@@ -385,16 +399,17 @@ export default function AdminEditResponsePage() {
 
   function getMaxNavigableSection(): number {
     if (!data?.form) return 0;
-    for (let i = 0; i < data.form.sections.length; i++) {
-      if (!isSectionComplete(i)) return i;
+    for (const idx of reachableSorted) {
+      if (!isSectionComplete(idx)) return idx;
     }
-    return data.form.sections.length - 1;
+    return reachableSorted[reachableSorted.length - 1] ?? 0;
   }
 
   function navigateToSection(targetIndex: number) {
     if (!data?.form) return;
+    if (!reachableSectionIndices.has(targetIndex)) return;
     const maxNav = getMaxNavigableSection();
-    if (targetIndex > maxNav) return;
+    if (reachableSorted.indexOf(targetIndex) > reachableSorted.indexOf(maxNav)) return;
     if (targetIndex === currentSectionIndex) return;
     if (targetIndex > currentSectionIndex) {
       setSectionHistory((prev) => [...prev, currentSectionIndex]);
@@ -827,9 +842,8 @@ export default function AdminEditResponsePage() {
           {isMultiSection && (
             <>
               {(() => {
-                const reachableArray = Array.from(reachableSectionIndices).sort((a, b) => a - b);
-                const posInPath = reachableArray.indexOf(currentSectionIndex) + 1;
-                const totalInPath = reachableArray.length;
+                const posInPath = reachableSorted.indexOf(currentSectionIndex) + 1;
+                const totalInPath = reachableSorted.length;
                 return (
                   <div className="mt-3 flex items-center gap-2">
                     <div className="flex-1 bg-gray-200 rounded-full h-1.5">
@@ -852,7 +866,7 @@ export default function AdminEditResponsePage() {
                     const isCompleted = completedSections.has(idx);
                     const isCurrent = idx === currentSectionIndex;
                     const maxNav = getMaxNavigableSection();
-                    const isNavigable = idx <= maxNav;
+                    const isNavigable = reachableSorted.indexOf(idx) <= reachableSorted.indexOf(maxNav);
                     const isLocked = !isNavigable && !isCurrent;
                     return (
                       <button
