@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import { 
@@ -126,8 +126,6 @@ export default function PublicFormPage() {
   const [regUserLookupResult, setRegUserLookupResult] = useState<"idle" | "found" | "not_found">("idle");
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
-  const [autoSubmitCountdown, setAutoSubmitCountdown] = useState<number | null>(null);
-  const autoSubmitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [completedSections, setCompletedSections] = useState<Set<number>>(new Set());
 
   const fetchForm = useCallback(async () => {
@@ -325,36 +323,6 @@ export default function PublicFormPage() {
     return form.sections.length - 1;
   }
 
-  function startAutoSubmitCountdown() {
-    if (autoSubmitTimerRef.current) return; // already running
-    setAutoSubmitCountdown(5);
-    autoSubmitTimerRef.current = setInterval(() => {
-      setAutoSubmitCountdown((prev) => {
-        if (prev === null || prev <= 1) {
-          cancelAutoSubmitCountdown();
-          handleFinalSubmit();
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }
-
-  function cancelAutoSubmitCountdown() {
-    if (autoSubmitTimerRef.current) {
-      clearInterval(autoSubmitTimerRef.current);
-      autoSubmitTimerRef.current = null;
-    }
-    setAutoSubmitCountdown(null);
-  }
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (autoSubmitTimerRef.current) clearInterval(autoSubmitTimerRef.current);
-    };
-  }, []);
-
   function updateAnswer(questionId: string, value: string, isUserEdit = false) {
     // If user edits an auto-filled field, clear it completely so they can re-type
     if (isUserEdit && autoFilledFields.has(questionId)) {
@@ -435,11 +403,7 @@ export default function PublicFormPage() {
     );
 
     if (result.type === "SUBMIT") {
-      if (form.autoSubmit) {
-        startAutoSubmitCountdown();
-      } else {
-        handleFinalSubmit();
-      }
+      handleFinalSubmit();
     } else {
       const nextIdx = result.sectionIndex ?? sectionIndex + 1;
       if (nextIdx === sectionIndex) return;
@@ -722,11 +686,7 @@ export default function PublicFormPage() {
     );
 
     if (result.type === "SUBMIT") {
-      if (form.autoSubmit) {
-        startAutoSubmitCountdown();
-      } else {
-        handleFinalSubmit();
-      }
+      handleFinalSubmit();
     } else {
       const nextIdx = result.sectionIndex ?? currentSectionIndex + 1;
       setSectionHistory((prev) => [...prev, currentSectionIndex]);
@@ -1577,36 +1537,6 @@ export default function PublicFormPage() {
               }}
               onCancel={() => setShowCamera({ questionId: "", show: false })}
             />
-          </div>
-        </div>
-      )}
-
-      {/* Auto-Submit Countdown Overlay */}
-      {autoSubmitCountdown !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: `${pc}15` }}>
-              <span className="text-3xl font-bold" style={{ color: pc }}>{autoSubmitCountdown}</span>
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Auto-submitting...</h3>
-            <p className="text-sm text-gray-500 mb-5">Your form will be submitted in {autoSubmitCountdown} second{autoSubmitCountdown !== 1 ? "s" : ""}.</p>
-            <div className="flex gap-3 justify-center">
-              <button
-                type="button"
-                onClick={cancelAutoSubmitCountdown}
-                className="rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => { cancelAutoSubmitCountdown(); handleFinalSubmit(); }}
-                className="rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-sm"
-                style={{ backgroundColor: pc }}
-              >
-                Submit Now
-              </button>
-            </div>
           </div>
         </div>
       )}

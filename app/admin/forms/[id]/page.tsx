@@ -2360,7 +2360,7 @@ function FormBuilderPageInner() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Auto-Submit</h3>
-                    <p className="text-xs text-gray-500 mt-1">Automatically submit the form 5 seconds after the last section is completed. Users can still submit manually or cancel the countdown.</p>
+                    <p className="text-xs text-gray-500 mt-1">Automatically submit the form immediately after the last section is completed.</p>
                   </div>
                   <button
                     onClick={() => setForm({ ...form, autoSubmit: !form.autoSubmit })}
