@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import { 
@@ -144,6 +144,41 @@ function EditResponseForm() {
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [completedSections, setCompletedSections] = useState<Set<number>>(new Set());
+
+  // Compute which section indices are reachable via routing from section 0
+  const reachableSectionIndices = useMemo(() => {
+    if (!data?.form?.sections?.length) return new Set<number>([0]);
+    const sections = data.form.sections;
+    const path = new Set<number>();
+    let current = 0;
+    const visited = new Set<number>();
+    while (current < sections.length && !visited.has(current)) {
+      path.add(current);
+      visited.add(current);
+      const section = sections[current];
+      const sectionQuestions = section.questions.map((q) => ({
+        id: q.id,
+        type: q.type,
+        config: typeof q.config === "string" ? q.config : JSON.stringify(q.config),
+      }));
+      const result = resolveNextSection(
+        sections.map((s) => ({
+          id: s.id,
+          order: s.order,
+          routingConfig: typeof s.routingConfig === "string"
+            ? s.routingConfig
+            : JSON.stringify(s.routingConfig),
+        })),
+        current,
+        sectionQuestions,
+        { ...originalValues, ...answers }
+      );
+      if (result.type === "SUBMIT") break;
+      current = result.sectionIndex ?? current + 1;
+    }
+    return path;
+  }, [data?.form?.sections, answers, originalValues]);
+
   const [showCamera, setShowCamera] = useState<{
     questionId: string;
     show: boolean;
@@ -475,7 +510,7 @@ function EditResponseForm() {
     );
 
     if (result.type === "SUBMIT") {
-      handleFinalSubmit();
+      handleFinalSubmit(updatedAnswers);
     } else {
       const nextIdx = result.sectionIndex ?? sectionIndex + 1;
       if (nextIdx === sectionIndex) return;
@@ -706,15 +741,16 @@ function EditResponseForm() {
     handleNext();
   }
 
-  async function handleFinalSubmit() {
+  async function handleFinalSubmit(latestAnswers?: Record<string, string>) {
     if (!data?.form) return;
-    await submitForm();
+    await submitForm(latestAnswers);
   }
 
-  async function submitForm() {
+  async function submitForm(latestAnswers?: Record<string, string>) {
     if (!data) return;
     setSubmitting(true);
     setError("");
+    const mergedAnswers = latestAnswers ?? answers;
 
     try {
       const res = await fetch(`/api/responses/${responseId}`, {
@@ -723,7 +759,7 @@ function EditResponseForm() {
         body: JSON.stringify({
           editToken,
           phoneNumber,
-          answers: { ...answers, ...originalValues },
+          answers: { ...originalValues, ...mergedAnswers },
           visitedSectionIds: [...new Set([...sectionHistory, currentSectionIndex])].map(
             (idx) => data.form.sections[idx]?.id
           ).filter(Boolean),
@@ -904,21 +940,29 @@ function EditResponseForm() {
           <p className="mt-3 text-sm text-red-500">* Required</p>
           {isMultiSection && (
             <>
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                  <div
-                    className="h-1.5 rounded-full transition-all duration-300"
-                    style={{ width: `${((currentSectionIndex + 1) / data.form.sections.length) * 100}%`, backgroundColor: pc }}
-                  />
-                </div>
-                <span className="text-xs text-gray-500 whitespace-nowrap">
-                  {currentSectionIndex + 1} / {data.form.sections.length}
-                </span>
-              </div>
+              {(() => {
+                const reachableArray = Array.from(reachableSectionIndices).sort((a, b) => a - b);
+                const posInPath = reachableArray.indexOf(currentSectionIndex) + 1;
+                const totalInPath = reachableArray.length;
+                return (
+                  <div className="mt-3 flex items-center gap-2">
+                    <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+                      <div
+                        className="h-1.5 rounded-full transition-all duration-300"
+                        style={{ width: `${(posInPath / totalInPath) * 100}%`, backgroundColor: pc }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                      {posInPath} / {totalInPath}
+                    </span>
+                  </div>
+                );
+              })()}
               {/* Section navigation tabs */}
               <div className="mt-3 -mx-1 overflow-x-auto scrollbar-hide">
                 <div className="flex gap-1 px-1 min-w-0">
                   {data.form.sections.map((section, idx) => {
+                    if (!reachableSectionIndices.has(idx)) return null;
                     const isCompleted = completedSections.has(idx);
                     const isCurrent = idx === currentSectionIndex;
                     const maxNav = getMaxNavigableSection();
