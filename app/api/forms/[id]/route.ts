@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, canEditForm } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
+import { sanitizeRichText } from "@/lib/rich-text";
 
 // GET a single form (public if published, or admin)
 export async function GET(
@@ -84,7 +85,7 @@ export async function PUT(
     // Update form metadata
     const updateData: Record<string, unknown> = {};
     if (body.title !== undefined) updateData.title = sanitize(body.title);
-    if (body.description !== undefined) updateData.description = sanitize(body.description);
+    if (body.description !== undefined) updateData.description = sanitizeRichText(body.description);
     if (body.published !== undefined) updateData.published = Boolean(body.published);
     if (body.collectPhone !== undefined) updateData.collectPhone = Boolean(body.collectPhone);
     if (body.phoneDescription !== undefined) updateData.phoneDescription = sanitize(body.phoneDescription);
@@ -200,7 +201,7 @@ export async function PUT(
             where: { id: s.id },
             data: {
               title: sanitize(s.title || "Untitled Section"),
-              description: sanitize(s.description || ""),
+              description: sanitizeRichText(s.description || ""),
               order: Number(s.order),
               routingConfig: JSON.stringify(s.routingConfig || {}),
             },
@@ -211,7 +212,7 @@ export async function PUT(
             data: {
               formId: id,
               title: sanitize(s.title || "Untitled Section"),
-              description: sanitize(s.description || ""),
+              description: sanitizeRichText(s.description || ""),
               order: Number(s.order),
               routingConfig: JSON.stringify(s.routingConfig || {}),
             },

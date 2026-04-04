@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
+import { sanitizeRichText } from "@/lib/rich-text";
 import { generateFormShortCode } from "@/lib/form-short-code";
 import { ensureFormShortCodes } from "@/lib/ensure-form-shortcode";
 
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const title = sanitize(body.title || "Untitled Form");
-    const description = sanitize(body.description || "");
+    const description = sanitizeRichText(body.description || "");
 
     // Create form first
     const shortCode = await generateFormShortCode();
