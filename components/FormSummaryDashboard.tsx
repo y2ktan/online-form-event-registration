@@ -9,6 +9,8 @@ import {
   ChevronRight,
   Phone,
   Hash,
+  Search,
+  X,
 } from "lucide-react";
 import AnswerChart from "@/components/charts/AnswerChart";
 import {
@@ -152,11 +154,32 @@ const TYPE_LABELS: Record<string, string> = QUESTION_TYPE_LABELS;
 
 function IndividualView({ responses }: { responses: ResponseEntry[] }) {
   const [index, setIndex] = useState(0);
+  const [query, setQuery] = useState("");
 
-  // Reset index when responses list changes (e.g. after refresh)
+  // Filter responses by search query (shortCode, phoneNumber, answer values, question labels)
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return responses;
+    return responses.filter((r) => {
+      if (r.shortCode?.toLowerCase().includes(q)) return true;
+      if (r.phoneNumber?.toLowerCase().includes(q)) return true;
+      return r.answers.some(
+        (a) =>
+          a.value?.toLowerCase().includes(q) ||
+          a.question.label?.toLowerCase().includes(q),
+      );
+    });
+  }, [responses, query]);
+
+  // Reset index when filtered list changes
   useEffect(() => {
-    setIndex((i) => Math.min(i, Math.max(0, responses.length - 1)));
-  }, [responses.length]);
+    setIndex((i) => Math.min(i, Math.max(0, filtered.length - 1)));
+  }, [filtered.length]);
+
+  // Reset index to 0 when query changes
+  useEffect(() => {
+    setIndex(0);
+  }, [query]);
 
   if (responses.length === 0) {
     return (
@@ -166,78 +189,117 @@ function IndividualView({ responses }: { responses: ResponseEntry[] }) {
     );
   }
 
-  const resp = responses[index];
-  const visibleAnswers = resp.answers.filter((a) => {
-    const cfg = parseConfig(a.question.config);
-    return !cfg.isPhoneNumber && !cfg.isTitle && !cfg.isMedia;
-  });
+  const resp = filtered[index];
+  const visibleAnswers = resp
+    ? resp.answers.filter((a) => {
+        const cfg = parseConfig(a.question.config);
+        return !cfg.isPhoneNumber && !cfg.isTitle && !cfg.isMedia;
+      })
+    : [];
 
   return (
     <div className="space-y-4">
-      {/* Navigation */}
-      <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-        <button
-          onClick={() => setIndex((i) => Math.max(0, i - 1))}
-          disabled={index === 0}
-          className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
-          aria-label="Previous response"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <div className="text-center">
-          <span className="text-xs text-gray-500">
-            Response {index + 1} of {responses.length}
-          </span>
-          <div className="flex items-center justify-center gap-1.5 mt-0.5">
-            <Hash className="h-3 w-3 text-gray-400" />
-            <span className="text-xs font-mono font-semibold text-gray-700">
-              {resp.shortCode}
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={() => setIndex((i) => Math.min(responses.length - 1, i + 1))}
-          disabled={index === responses.length - 1}
-          className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
-          aria-label="Next response"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* Response detail card */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
-        {/* Meta */}
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <Phone className="h-3.5 w-3.5" />
-            {resp.phoneNumber ?? "—"}
-          </div>
-          <div className="text-xs text-gray-400">
-            Submitted {relativeTime(resp.createdAt)}
-          </div>
-        </div>
-
-        {/* Answers */}
-        {visibleAnswers.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-gray-400 text-center">
-            No answers for this response.
-          </p>
-        ) : (
-          visibleAnswers.map((answer) => (
-            <div key={answer.id} className="px-4 py-3">
-              <p className="text-xs font-medium text-gray-500 mb-1">
-                {answer.question.label || (
-                  <span className="italic">Untitled</span>
-                )}
-              </p>
-              <p className="text-sm text-gray-800 break-words">
-                {formatValue(answer.value, answer.question.type)}
-              </p>
-            </div>
-          ))
+      {/* Search */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by short code, phone, question or answer…"
+          className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-9 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:text-gray-600"
+            aria-label="Clear search"
+          >
+            <X className="h-4 w-4" />
+          </button>
         )}
       </div>
+
+      {/* No matches */}
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-sm text-gray-400">
+          No responses match &ldquo;{query}&rdquo;
+        </div>
+      ) : (
+        <>
+          {/* Navigation */}
+          <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <button
+              onClick={() => setIndex((i) => Math.max(0, i - 1))}
+              disabled={index === 0}
+              className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label="Previous response"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <div className="text-center">
+              <span className="text-xs text-gray-500">
+                Response {index + 1} of {filtered.length}
+                {query && (
+                  <span className="text-gray-400">
+                    {" "}({responses.length} total)
+                  </span>
+                )}
+              </span>
+              <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                <Hash className="h-3 w-3 text-gray-400" />
+                <span className="text-xs font-mono font-semibold text-gray-700">
+                  {resp.shortCode}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() =>
+                setIndex((i) => Math.min(filtered.length - 1, i + 1))
+              }
+              disabled={index === filtered.length - 1}
+              className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label="Next response"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Response detail card */}
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
+            {/* Meta */}
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <Phone className="h-3.5 w-3.5" />
+                {resp.phoneNumber ?? "—"}
+              </div>
+              <div className="text-xs text-gray-400">
+                Submitted {relativeTime(resp.createdAt)}
+              </div>
+            </div>
+
+            {/* Answers */}
+            {visibleAnswers.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-gray-400 text-center">
+                No answers for this response.
+              </p>
+            ) : (
+              visibleAnswers.map((answer) => (
+                <div key={answer.id} className="px-4 py-3">
+                  <p className="text-xs font-medium text-gray-500 mb-1">
+                    {answer.question.label || (
+                      <span className="italic">Untitled</span>
+                    )}
+                  </p>
+                  <p className="text-sm text-gray-800 break-words">
+                    {formatValue(answer.value, answer.question.type)}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
