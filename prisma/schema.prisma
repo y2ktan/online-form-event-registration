@@ -75,6 +75,8 @@ model Question {
   // For LINEAR_SCALE: min/max labels stored as config JSON
   // For GRID types: row/column labels stored in options with a "group" field
   config     String   @default("{}") // JSON string for extra config. Routing rules stored here as "routing" key.
+
+  @@index([formId])
 }
 
 model Option {
@@ -84,6 +86,8 @@ model Option {
   value      String
   order      Int
   group      String   @default("default") // "default" for regular options, "row"/"column" for grids
+
+  @@index([questionId])
 }
 
 model Response {
@@ -98,6 +102,7 @@ model Response {
   answers     Answer[]
 
   @@unique([formId, shortCode])
+  @@index([formId])
 }
 
 model Answer {
@@ -107,6 +112,10 @@ model Answer {
   questionId String
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   value      String   @default("") // JSON string for complex answers (grids, checkboxes, etc.)
+
+  @@index([responseId])
+  @@index([questionId])
+  @@index([questionId, responseId])
 }
 
 model FormCollaborator {

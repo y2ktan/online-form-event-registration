@@ -39,6 +39,7 @@ import {
   Redo2,
   Palette,
   Download,
+  BarChart2,
 } from "lucide-react";
 import {
   DndContext,
@@ -82,6 +83,7 @@ import {
 import { type FormTheme, DEFAULT_THEME, parseTheme, serializeTheme, COLOR_PRESETS, BG_PRESETS, HEADER_IMAGE_MAX_BYTES, ALLOWED_IMAGE_TYPES, BUILT_IN_FONTS } from "@/lib/theme";
 import GoogleFormEditor from "@/components/GoogleFormEditor";
 import SearchableSelect from "@/components/SearchableSelect";
+import FormSummaryDashboard from "@/components/FormSummaryDashboard";
 import { sanitizeRichText, isRichTextEmpty } from "@/lib/rich-text";
 
 interface OptionData {
@@ -1238,7 +1240,7 @@ function FormBuilderPageInner() {
   const [insertMenu, setInsertMenu] = useState<{ key: string; sectionIndex: number; insertAtIndex: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile">(
+  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile" | "summary">(
     searchParams.get("tab") === "responses" ? "responses" : "questions"
   );
   const [showPreview, setShowPreview] = useState(false);
@@ -1566,7 +1568,7 @@ function FormBuilderPageInner() {
   }, [formId]);
 
   useEffect(() => {
-    if (activeTab === "responses") {
+    if (activeTab === "responses" || activeTab === "summary") {
       fetchResponses();
     }
   }, [activeTab, fetchResponses]);
@@ -2175,6 +2177,17 @@ function FormBuilderPageInner() {
           >
             <Users className="h-4 w-4" />
             Responses
+          </button>
+          <button
+            onClick={() => setActiveTab("summary")}
+            className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium ${
+              activeTab === "summary"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <BarChart2 className="h-4 w-4" />
+            Summary
           </button>
           {isAdmin && (
             <button
@@ -3205,6 +3218,18 @@ function FormBuilderPageInner() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Summary tab */}
+        {activeTab === "summary" && form && (
+          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+            <FormSummaryDashboard
+              responses={responses}
+              questions={form.sections.flatMap((s) => s.questions)}
+              formId={form.id}
+              onRefresh={fetchResponses}
+            />
           </div>
         )}
       </div>
