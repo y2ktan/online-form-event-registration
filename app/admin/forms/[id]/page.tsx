@@ -1568,7 +1568,7 @@ function FormBuilderPageInner() {
   }, [formId]);
 
   useEffect(() => {
-    if (activeTab === "responses" || activeTab === "summary") {
+    if (activeTab === "responses") {
       fetchResponses();
     }
   }, [activeTab, fetchResponses]);
@@ -3225,8 +3225,6 @@ function FormBuilderPageInner() {
         {activeTab === "summary" && form && (
           <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
             <FormSummaryDashboard
-              responses={responses}
-              questions={form.sections.flatMap((s) => s.questions)}
               formId={form.id}
               onRefresh={fetchResponses}
             />

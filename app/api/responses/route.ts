@@ -19,6 +19,15 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const phone = searchParams.get("phone") || "";
   const formId = searchParams.get("formId") || "";
+  const pageParam = parseInt(searchParams.get("page") || "", 10);
+  const pageSizeParam = parseInt(searchParams.get("pageSize") || "", 10);
+
+  // When page/pageSize are provided, enable pagination; otherwise return all (legacy)
+  const paginated = !isNaN(pageParam) && pageParam > 0;
+  const page = paginated ? pageParam : 1;
+  const pageSize = paginated
+    ? Math.min(Math.max(pageSizeParam || 50, 1), 200)
+    : undefined;
 
   const where: Record<string, unknown> = {};
   if (phone) {
@@ -53,7 +62,14 @@ export async function GET(request: NextRequest) {
       form: { select: { title: true, id: true } },
     },
     orderBy: { createdAt: "desc" },
+    ...(paginated ? { skip: (page - 1) * pageSize!, take: pageSize } : {}),
   });
+
+  // Paginated mode: return envelope with total; legacy: bare array
+  if (paginated) {
+    const total = await prisma.response.count({ where });
+    return NextResponse.json({ responses, total, page, pageSize });
+  }
 
   return NextResponse.json(responses);
 }

@@ -2,7 +2,9 @@ import { describe, test, expect } from "vitest";
 import {
   aggregateResponses,
   buildAnswerMap,
+  buildSummaryFromGrouped,
   type QuestionRecord,
+  type GroupedCount,
 } from "../lib/summary-helpers";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -390,5 +392,195 @@ describe("aggregateResponses — robustness", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].questionId).toBe("q1");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// buildSummaryFromGrouped — server-side grouped-count aggregation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function gc(questionId: string, value: string, count: number): GroupedCount {
+  return { questionId, value, _count: count };
+}
+
+describe("buildSummaryFromGrouped — text types", () => {
+  test("produces TextSummary with correct unique count from grouped rows", () => {
+    const questions = [makeQuestion({ id: "q1", type: "SHORT_TEXT", label: "Name" })];
+    const grouped = [gc("q1", "Alice", 3), gc("q1", "Bob", 2), gc("q1", "alice", 1)];
+    const samples = new Map([["q1", ["Alice", "Bob", "alice"]]]);
+    const result = buildSummaryFromGrouped(grouped, questions, samples);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe("text");
+    if (result[0].kind === "text") {
+      expect(result[0].totalAnswers).toBe(6);
+      expect(result[0].uniqueCount).toBe(2); // "alice" + "bob"
+      expect(result[0].recentEntries).toEqual(["Alice", "Bob", "alice"]);
+    }
+  });
+
+  test("caps recentEntries at 10", () => {
+    const questions = [makeQuestion({ id: "q1", type: "PARAGRAPH", label: "Notes" })];
+    const grouped = [gc("q1", "x", 1)];
+    const entries = Array.from({ length: 15 }, (_, i) => `Entry ${i}`);
+    const samples = new Map([["q1", entries]]);
+    const result = buildSummaryFromGrouped(grouped, questions, samples);
+    if (result[0].kind === "text") {
+      expect(result[0].recentEntries).toHaveLength(10);
+    }
+  });
+
+  test("handles DATE and TIME as text types", () => {
+    const questions = [
+      makeQuestion({ id: "q1", type: "DATE", label: "Date" }),
+      makeQuestion({ id: "q2", type: "TIME", label: "Time" }),
+    ];
+    const grouped = [gc("q1", "2026-04-05", 1), gc("q2", "10:00", 1)];
+    const result = buildSummaryFromGrouped(grouped, questions);
+    expect(result[0].kind).toBe("text");
+    expect(result[1].kind).toBe("text");
+  });
+});
+
+describe("buildSummaryFromGrouped — choice types", () => {
+  test("builds distribution for MULTIPLE_CHOICE from grouped counts", () => {
+    const questions = [makeQuestion({ id: "q1", type: "MULTIPLE_CHOICE", label: "Color" })];
+    const grouped = [gc("q1", "Red", 3), gc("q1", "Blue", 2)];
+    const result = buildSummaryFromGrouped(grouped, questions);
+
+    expect(result[0].kind).toBe("choice");
+    if (result[0].kind === "choice") {
+      expect(result[0].distribution[0]).toMatchObject({ label: "Red", count: 3, percent: 60 });
+      expect(result[0].distribution[1]).toMatchObject({ label: "Blue", count: 2, percent: 40 });
+    }
+  });
+
+  test("expands CHECKBOX JSON arrays and aggregates per option", () => {
+    const questions = [makeQuestion({ id: "q1", type: "CHECKBOX", label: "Hobbies" })];
+    const grouped = [
+      gc("q1", '["Reading","Gaming"]', 2),
+      gc("q1", '["Reading","Cooking"]', 1),
+    ];
+    const result = buildSummaryFromGrouped(grouped, questions);
+    if (result[0].kind === "choice") {
+      const reading = result[0].distribution.find((d) => d.label === "Reading");
+      expect(reading?.count).toBe(3);
+    }
+  });
+
+  test("treats malformed CHECKBOX value as plain text", () => {
+    const questions = [makeQuestion({ id: "q1", type: "CHECKBOX", label: "Items" })];
+    const grouped = [gc("q1", "not-json", 1)];
+    const result = buildSummaryFromGrouped(grouped, questions);
+    expect(result[0].kind).toBe("choice");
+    if (result[0].kind === "choice") {
+      expect(result[0].distribution[0].label).toBe("not-json");
+    }
+  });
+});
+
+describe("buildSummaryFromGrouped — grid types", () => {
+  const gridQ = makeQuestion({
+    id: "q1",
+    type: "MULTIPLE_CHOICE_GRID",
+    label: "Grid",
+    config: {
+      grid: {
+        rows: [{ id: "r1", value: "Row 1" }],
+        columns: [{ id: "c1", value: "Col A" }, { id: "c2", value: "Col B" }],
+      },
+    },
+  });
+
+  test("counts grid selections from grouped values", () => {
+    const grouped = [
+      gc("q1", JSON.stringify({ r1: "c1" }), 3),
+      gc("q1", JSON.stringify({ r1: "c2" }), 1),
+    ];
+    const result = buildSummaryFromGrouped(grouped, [gridQ]);
+    expect(result[0].kind).toBe("grid");
+    if (result[0].kind === "grid") {
+      expect(result[0].totalAnswers).toBe(4);
+      expect(result[0].rows[0].columns[0].count).toBe(3); // c1
+      expect(result[0].rows[0].columns[1].count).toBe(1); // c2
+    }
+  });
+
+  test("returns empty rows for missing grid config", () => {
+    const badQ = makeQuestion({ id: "q2", type: "MULTIPLE_CHOICE_GRID", label: "Bad" });
+    const result = buildSummaryFromGrouped([gc("q2", "{}", 1)], [badQ]);
+    if (result[0].kind === "grid") {
+      expect(result[0].rows).toEqual([]);
+    }
+  });
+});
+
+describe("buildSummaryFromGrouped — scale types", () => {
+  test("computes weighted avg/min/max for LINEAR_SCALE", () => {
+    const questions = [makeQuestion({ id: "q1", type: "LINEAR_SCALE", label: "Score" })];
+    const grouped = [gc("q1", "1", 1), gc("q1", "3", 2), gc("q1", "5", 1)];
+    const result = buildSummaryFromGrouped(grouped, questions);
+    if (result[0].kind === "scale") {
+      expect(result[0].totalAnswers).toBe(4);
+      expect(result[0].min).toBe(1);
+      expect(result[0].max).toBe(5);
+      expect(result[0].avg).toBe(3); // (1+3+3+5)/4 = 3
+    }
+  });
+
+  test("skips non-numeric grouped values", () => {
+    const questions = [makeQuestion({ id: "q1", type: "RATING", label: "Stars" })];
+    const grouped = [gc("q1", "4", 2), gc("q1", "NaN-str", 1)];
+    const result = buildSummaryFromGrouped(grouped, questions);
+    if (result[0].kind === "scale") {
+      expect(result[0].totalAnswers).toBe(2);
+      expect(result[0].avg).toBe(4);
+    }
+  });
+});
+
+describe("buildSummaryFromGrouped — file types", () => {
+  test("uses sample URLs for file summaries", () => {
+    const questions = [makeQuestion({ id: "q1", type: "FILE_UPLOAD", label: "Attach" })];
+    const grouped = [gc("q1", "/uploads/a.pdf", 5), gc("q1", "/uploads/b.pdf", 3)];
+    const samples = new Map([["q1", ["/uploads/a.pdf", "/uploads/b.pdf"]]]);
+    const result = buildSummaryFromGrouped(grouped, questions, samples);
+    if (result[0].kind === "file") {
+      expect(result[0].totalAnswers).toBe(8);
+      expect(result[0].urls).toEqual(["/uploads/a.pdf", "/uploads/b.pdf"]);
+    }
+  });
+});
+
+describe("buildSummaryFromGrouped — general", () => {
+  test("skips system questions (isPhoneNumber, isTitle, isMedia)", () => {
+    const questions = [
+      makeQuestion({ id: "q1", type: "SHORT_TEXT", label: "Phone", config: { isPhoneNumber: true } }),
+      makeQuestion({ id: "q2", type: "SHORT_TEXT", label: "Name" }),
+    ];
+    const grouped = [gc("q1", "123", 1), gc("q2", "Alice", 1)];
+    const result = buildSummaryFromGrouped(grouped, questions);
+    expect(result).toHaveLength(1);
+    expect(result[0].questionId).toBe("q2");
+  });
+
+  test("returns empty summaries when no grouped data exists", () => {
+    const questions = [makeQuestion({ id: "q1", type: "SHORT_TEXT", label: "Name" })];
+    const result = buildSummaryFromGrouped([], questions);
+    expect(result).toHaveLength(1);
+    if (result[0].kind === "text") {
+      expect(result[0].totalAnswers).toBe(0);
+    }
+  });
+
+  test("filters out empty-string grouped values", () => {
+    const questions = [makeQuestion({ id: "q1", type: "MULTIPLE_CHOICE", label: "Pick" })];
+    const grouped = [gc("q1", "", 10), gc("q1", "Apple", 3)];
+    const result = buildSummaryFromGrouped(grouped, questions);
+    if (result[0].kind === "choice") {
+      expect(result[0].totalAnswers).toBe(3);
+      expect(result[0].distribution).toHaveLength(1);
+      expect(result[0].distribution[0].label).toBe("Apple");
+    }
   });
 });

@@ -1,27 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   RefreshCw,
   LayoutGrid,
   User,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Phone,
   Hash,
   Search,
   X,
+  Users,
+  AlertCircle,
 } from "lucide-react";
 import AnswerChart from "@/components/charts/AnswerChart";
-import {
-  aggregateResponses,
-  buildAnswerMap,
-  parseConfig,
-  type QuestionRecord,
-} from "@/lib/summary-helpers";
+import { parseConfig, type QuestionSummary, type SectionSummary } from "@/lib/summary-helpers";
 import { QUESTION_TYPE_LABELS } from "@/lib/question-types";
 
-// ─── Prop types (mirror existing editor types) ───────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AnswerData {
   id: string;
@@ -42,26 +41,27 @@ interface ResponseEntry {
   answers: AnswerData[];
 }
 
-interface QuestionData {
-  id: string;
-  type: string;
-  label: string;
-  isRequired: boolean;
-  order: number;
-  options: { id: string; value: string; order: number; group: string }[];
-  config: Record<string, unknown>;
+interface SummaryData {
+  sections: SectionSummary[];
+  totalResponses: number;
+  userProfileCount: number | null;
+}
+
+interface RegUserTableData {
+  headers: string[];
+  rows: Record<string, string>[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 interface FormSummaryDashboardProps {
-  responses: ResponseEntry[];
-  questions: QuestionData[];
   formId: string;
   onRefresh: () => Promise<void>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Format a raw answer value into a readable string for the individual view. */
 function formatValue(value: string, type: string): string {
   if (!value || value.trim() === "") return "—";
   switch (type) {
@@ -102,20 +102,24 @@ function relativeTime(isoStr: string): string {
   return `${days}d ago`;
 }
 
+const TYPE_LABELS: Record<string, string> = QUESTION_TYPE_LABELS;
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatCard({
   label,
   value,
   sub,
+  accent,
 }: {
   label: string;
   value: number | string;
   sub?: string;
+  accent?: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-center">
-      <p className="text-2xl font-bold text-indigo-600">{value}</p>
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-center min-w-[120px]">
+      <p className={`text-2xl font-bold ${accent ?? "text-indigo-600"}`}>{value}</p>
       <p className="mt-0.5 text-xs font-medium text-gray-500 uppercase tracking-wide">
         {label}
       </p>
@@ -148,40 +152,333 @@ function QuestionCard({
   );
 }
 
-const TYPE_LABELS: Record<string, string> = QUESTION_TYPE_LABELS;
+// ─── Section accordion ────────────────────────────────────────────────────────
 
-// ─── Individual response view ───────────────────────────────────────────────
+function SectionAccordion({
+  section,
+  open,
+  onToggle,
+}: {
+  section: SectionSummary;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  if (section.questions.length === 0) return null;
 
-function IndividualView({ responses }: { responses: ResponseEntry[] }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {open ? (
+            <ChevronUp className="h-4 w-4 text-gray-400" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-gray-400" />
+          )}
+          <h2 className="text-sm font-semibold text-gray-700">{section.title}</h2>
+          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-600">
+            {section.questions.length} question{section.questions.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 p-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {section.questions.map((summary) => (
+              <QuestionCard
+                key={summary.questionId}
+                label={summary.label}
+                typeLabel={TYPE_LABELS[summary.type] ?? summary.type}
+              >
+                <AnswerChart summary={summary} />
+              </QuestionCard>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Non-respondents panel ──────────────────────────────────────────────────
+
+function NonRespondentsPanel({
+  formId,
+  totalResponses,
+  userProfileCount,
+}: {
+  formId: string;
+  totalResponses: number;
+  userProfileCount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tableData, setTableData] = useState<RegUserTableData | null>(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const notYet = Math.max(0, userProfileCount - totalResponses);
+
+  const fetchTable = useCallback(
+    async (p: number, q: string) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          tableView: "1",
+          page: String(p),
+          pageSize: "50",
+        });
+        if (q.trim()) params.set("search", q.trim());
+        const res = await fetch(
+          `/api/forms/${formId}/registered-user-data?${params}`
+        );
+        if (res.ok) {
+          setTableData(await res.json());
+        }
+      } catch {
+        // ignore
+      }
+      setLoading(false);
+    },
+    [formId]
+  );
+
+  // Fetch on open
+  useEffect(() => {
+    if (open && !tableData) fetchTable(1, "");
+  }, [open, tableData, fetchTable]);
+
+  // Debounced search
+  const onSearchChange = (val: string) => {
+    setSearch(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      fetchTable(1, val);
+    }, 400);
+  };
+
+  const goPage = (p: number) => {
+    setPage(p);
+    fetchTable(p, search);
+  };
+
+  const totalPages = tableData
+    ? Math.ceil(tableData.total / tableData.pageSize)
+    : 0;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      {/* Header row */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {open ? (
+            <ChevronUp className="h-4 w-4 text-gray-400" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-gray-400" />
+          )}
+          <Users className="h-4 w-4 text-orange-500" />
+          <h2 className="text-sm font-semibold text-gray-700">
+            Registered Users
+          </h2>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span>
+            Registered: <strong>{userProfileCount}</strong>
+          </span>
+          <span>
+            Responded: <strong>{totalResponses}</strong>
+          </span>
+          {notYet > 0 && (
+            <span className="flex items-center gap-1 text-orange-600 font-semibold">
+              <AlertCircle className="h-3 w-3" />
+              Not yet: {notYet}
+            </span>
+          )}
+        </div>
+      </button>
+
+      {/* Expandable table */}
+      {open && (
+        <div className="border-t border-gray-100 p-4 space-y-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search across all columns…"
+              className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-9 text-sm shadow-sm placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
+            {search && (
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setPage(1);
+                  fetchTable(1, "");
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:text-gray-600"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {loading && (
+            <p className="text-xs text-gray-400 text-center py-4">Loading…</p>
+          )}
+
+          {!loading && tableData && tableData.rows.length === 0 && (
+            <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+              {search
+                ? `No rows match "${search}"`
+                : "No registered user data."}
+            </div>
+          )}
+
+          {!loading && tableData && tableData.rows.length > 0 && (
+            <>
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      {tableData.headers.map((h) => (
+                        <th
+                          key={h}
+                          className="px-3 py-2 text-left font-medium text-gray-500 whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {tableData.rows.map((row, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        {tableData.headers.map((h) => (
+                          <td
+                            key={h}
+                            className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[200px] truncate"
+                            title={String(row[h] ?? "")}
+                          >
+                            {row[h] ?? ""}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
+                  <span>
+                    Page {tableData.page} of {totalPages} ({tableData.total}{" "}
+                    rows)
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => goPage(page - 1)}
+                      disabled={page <= 1}
+                      className="rounded px-2 py-1 border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      onClick={() => goPage(page + 1)}
+                      disabled={page >= totalPages}
+                      className="rounded px-2 py-1 border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Paginated Individual response view ──────────────────────────────────────
+
+function IndividualView({ formId }: { formId: string }) {
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [responses, setResponses] = useState<ResponseEntry[]>([]);
   const [index, setIndex] = useState(0);
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const pageSize = 50;
 
-  // Filter responses by search query (shortCode, phoneNumber, answer values, question labels)
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return responses;
-    return responses.filter((r) => {
-      if (r.shortCode?.toLowerCase().includes(q)) return true;
-      if (r.phoneNumber?.toLowerCase().includes(q)) return true;
-      return r.answers.some(
-        (a) =>
-          a.value?.toLowerCase().includes(q) ||
-          a.question.label?.toLowerCase().includes(q),
-      );
-    });
-  }, [responses, query]);
+  const fetchPage = useCallback(
+    async (p: number) => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/responses?formId=${formId}&page=${p}&pageSize=${pageSize}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setResponses(data.responses);
+          setTotal(data.total);
+          setPage(data.page);
+          setIndex(0);
+        }
+      } catch {
+        // ignore
+      }
+      setLoading(false);
+    },
+    [formId]
+  );
 
-  // Reset index when filtered list changes
+  // Fetch first page on mount
   useEffect(() => {
-    setIndex((i) => Math.min(i, Math.max(0, filtered.length - 1)));
-  }, [filtered.length]);
+    fetchPage(1);
+  }, [fetchPage]);
 
-  // Reset index to 0 when query changes
+  const totalPages = Math.ceil(total / pageSize);
+
+  // Client-side filter within current page
+  const filtered = query.trim()
+    ? responses.filter((r) => {
+        const q = query.trim().toLowerCase();
+        if (r.shortCode?.toLowerCase().includes(q)) return true;
+        if (r.phoneNumber?.toLowerCase().includes(q)) return true;
+        return r.answers.some(
+          (a) =>
+            a.value?.toLowerCase().includes(q) ||
+            a.question.label?.toLowerCase().includes(q)
+        );
+      })
+    : responses;
+
+  // Reset index when filter or page changes
   useEffect(() => {
     setIndex(0);
-  }, [query]);
+  }, [query, page]);
 
-  if (responses.length === 0) {
+  if (loading && responses.length === 0) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-sm text-gray-400">
+        Loading…
+      </div>
+    );
+  }
+
+  if (total === 0) {
     return (
       <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-sm text-gray-400">
         No responses yet.
@@ -199,7 +496,7 @@ function IndividualView({ responses }: { responses: ResponseEntry[] }) {
 
   return (
     <div className="space-y-4">
-      {/* Search */}
+      {/* Search within page */}
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         <input
@@ -220,14 +517,13 @@ function IndividualView({ responses }: { responses: ResponseEntry[] }) {
         )}
       </div>
 
-      {/* No matches */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-sm text-gray-400">
-          No responses match &ldquo;{query}&rdquo;
+          No responses match &ldquo;{query}&rdquo; on this page.
         </div>
       ) : (
         <>
-          {/* Navigation */}
+          {/* Response nav within page */}
           <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
             <button
               onClick={() => setIndex((i) => Math.max(0, i - 1))}
@@ -241,17 +537,17 @@ function IndividualView({ responses }: { responses: ResponseEntry[] }) {
               <span className="text-xs text-gray-500">
                 Response {index + 1} of {filtered.length}
                 {query && (
-                  <span className="text-gray-400">
-                    {" "}({responses.length} total)
-                  </span>
+                  <span className="text-gray-400"> ({total} total)</span>
                 )}
               </span>
-              <div className="flex items-center justify-center gap-1.5 mt-0.5">
-                <Hash className="h-3 w-3 text-gray-400" />
-                <span className="text-xs font-mono font-semibold text-gray-700">
-                  {resp.shortCode}
-                </span>
-              </div>
+              {resp && (
+                <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                  <Hash className="h-3 w-3 text-gray-400" />
+                  <span className="text-xs font-mono font-semibold text-gray-700">
+                    {resp.shortCode}
+                  </span>
+                </div>
+              )}
             </div>
             <button
               onClick={() =>
@@ -266,39 +562,64 @@ function IndividualView({ responses }: { responses: ResponseEntry[] }) {
           </div>
 
           {/* Response detail card */}
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
-            {/* Meta */}
-            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                <Phone className="h-3.5 w-3.5" />
-                {resp.phoneNumber ?? "—"}
-              </div>
-              <div className="text-xs text-gray-400">
-                Submitted {relativeTime(resp.createdAt)}
-              </div>
-            </div>
-
-            {/* Answers */}
-            {visibleAnswers.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-gray-400 text-center">
-                No answers for this response.
-              </p>
-            ) : (
-              visibleAnswers.map((answer) => (
-                <div key={answer.id} className="px-4 py-3">
-                  <p className="text-xs font-medium text-gray-500 mb-1">
-                    {answer.question.label || (
-                      <span className="italic">Untitled</span>
-                    )}
-                  </p>
-                  <p className="text-sm text-gray-800 break-words">
-                    {formatValue(answer.value, answer.question.type)}
-                  </p>
+          {resp && (
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
+              {/* Meta */}
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <Phone className="h-3.5 w-3.5" />
+                  {resp.phoneNumber ?? "—"}
                 </div>
-              ))
-            )}
-          </div>
+                <div className="text-xs text-gray-400">
+                  Submitted {relativeTime(resp.createdAt)}
+                </div>
+              </div>
+
+              {/* Answers */}
+              {visibleAnswers.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-gray-400 text-center">
+                  No answers for this response.
+                </p>
+              ) : (
+                visibleAnswers.map((answer) => (
+                  <div key={answer.id} className="px-4 py-3">
+                    <p className="text-xs font-medium text-gray-500 mb-1">
+                      {answer.question.label || (
+                        <span className="italic">Untitled</span>
+                      )}
+                    </p>
+                    <p className="text-sm text-gray-800 break-words">
+                      {formatValue(answer.value, answer.question.type)}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </>
+      )}
+
+      {/* Page navigation */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm text-xs text-gray-500">
+          <button
+            onClick={() => fetchPage(page - 1)}
+            disabled={page <= 1 || loading}
+            className="rounded px-2 py-1 border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ← Prev page
+          </button>
+          <span>
+            Page {page} of {totalPages} ({total} responses)
+          </span>
+          <button
+            onClick={() => fetchPage(page + 1)}
+            disabled={page >= totalPages || loading}
+            className="rounded px-2 py-1 border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Next page →
+          </button>
+        </div>
       )}
     </div>
   );
@@ -307,46 +628,77 @@ function IndividualView({ responses }: { responses: ResponseEntry[] }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FormSummaryDashboard({
-  responses,
-  questions,
   formId,
   onRefresh,
 }: FormSummaryDashboardProps) {
   const [view, setView] = useState<"summary" | "individual">("summary");
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
+  const [summaryError, setSummaryError] = useState(false);
+
+  // ── Fetch summary data from server ────────────────────────────────────
+  const fetchSummary = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/forms/${formId}/summary`);
+      if (res.ok) {
+        const data: SummaryData = await res.json();
+        setSummaryData(data);
+        setSummaryError(false);
+        // Default: all sections open on first load
+        setOpenSections((prev) => {
+          if (prev.size === 0) {
+            return new Set(data.sections.map((s) => s.id));
+          }
+          return prev;
+        });
+      } else {
+        setSummaryError(true);
+      }
+    } catch {
+      setSummaryError(true);
+    }
+  }, [formId]);
 
   // ── SSE subscription ─────────────────────────────────────────────────────
   const stableRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([onRefresh(), new Promise((r) => setTimeout(r, 3_000))]);
+    await Promise.all([
+      onRefresh(),
+      fetchSummary(),
+      new Promise((r) => setTimeout(r, 3_000)),
+    ]);
     setLastUpdated(new Date());
     setRefreshing(false);
-  }, [onRefresh]);
+  }, [onRefresh, fetchSummary]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
 
   useEffect(() => {
     const es = new EventSource(`/api/forms/${formId}/sse`);
     es.onmessage = () => stableRefresh();
     es.onerror = () => {
-      // Close and reconnect after a brief pause to handle transient errors
       es.close();
     };
     return () => es.close();
   }, [formId, stableRefresh]);
 
-  // ── Aggregation (memoised — O(R × Q) single pass) ────────────────────────
-  const summaries = useMemo(() => {
-    const answerMap = buildAnswerMap(
-      responses as unknown as Array<{ answers: Array<Record<string, unknown>> }>
-    );
-    return aggregateResponses(answerMap, questions as unknown as QuestionRecord[]);
-  }, [responses, questions]);
+  // ── Toggle a section ──────────────────────────────────────────────────
+  const toggleSection = (id: string) => {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
-  // ── Phone stats ───────────────────────────────────────────────────────────
-  const phoneCount = useMemo(
-    () => responses.filter((r) => r.phoneNumber).length,
-    [responses]
-  );
+  const totalQuestions = summaryData
+    ? summaryData.sections.reduce((s, sec) => s + sec.questions.length, 0)
+    : 0;
 
   return (
     <div className="space-y-4">
@@ -355,11 +707,24 @@ export default function FormSummaryDashboard({
         <div className="flex flex-wrap gap-3">
           <StatCard
             label="Total Responses"
-            value={responses.length}
-            sub={responses.length > 0 ? `Last: ${relativeTime(responses[0].createdAt)}` : undefined}
+            value={summaryData?.totalResponses ?? "—"}
           />
-          {phoneCount > 0 && (
-            <StatCard label="With Phone" value={phoneCount} />
+          {summaryData && summaryData.userProfileCount !== null && (
+            <>
+              <StatCard
+                label="Registered"
+                value={summaryData.userProfileCount}
+                accent="text-blue-600"
+              />
+              <StatCard
+                label="Not Yet"
+                value={Math.max(
+                  0,
+                  summaryData.userProfileCount - summaryData.totalResponses
+                )}
+                accent="text-orange-600"
+              />
+            </>
           )}
         </div>
 
@@ -397,8 +762,12 @@ export default function FormSummaryDashboard({
             className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
             title="Refresh now"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline">{refreshing ? "Refreshing…" : "Refresh"}</span>
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+            />
+            <span className="hidden sm:inline">
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </span>
           </button>
         </div>
       </div>
@@ -408,36 +777,62 @@ export default function FormSummaryDashboard({
         new submissions
       </p>
 
+      {/* ── Non-respondents panel ───────────────────────────────────────── */}
+      {summaryData && summaryData.userProfileCount !== null && (
+        <NonRespondentsPanel
+          formId={formId}
+          totalResponses={summaryData.totalResponses}
+          userProfileCount={summaryData.userProfileCount}
+        />
+      )}
+
       {/* ── View: Summary ───────────────────────────────────────────────── */}
       {view === "summary" && (
         <>
-          {responses.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-sm text-gray-400">
-              No responses yet. Share your form to start collecting data.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {summaries.map((summary) => (
-                <QuestionCard
-                  key={summary.questionId}
-                  label={summary.label}
-                  typeLabel={TYPE_LABELS[summary.type] ?? summary.type}
-                >
-                  <AnswerChart summary={summary} />
-                </QuestionCard>
-              ))}
-              {summaries.length === 0 && (
-                <p className="col-span-2 py-8 text-center text-sm text-gray-400">
-                  No answerable questions found in this form.
-                </p>
-              )}
+          {summaryError && (
+            <div className="rounded-xl border-2 border-dashed border-red-200 p-8 text-center text-sm text-red-400">
+              Failed to load summary. Please try refreshing.
             </div>
           )}
+
+          {!summaryError && !summaryData && (
+            <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-sm text-gray-400">
+              Loading summary…
+            </div>
+          )}
+
+          {!summaryError &&
+            summaryData &&
+            summaryData.totalResponses === 0 && (
+              <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-sm text-gray-400">
+                No responses yet. Share your form to start collecting data.
+              </div>
+            )}
+
+          {!summaryError &&
+            summaryData &&
+            summaryData.totalResponses > 0 && (
+              <div className="space-y-4">
+                {summaryData.sections.map((section) => (
+                  <SectionAccordion
+                    key={section.id}
+                    section={section}
+                    open={openSections.has(section.id)}
+                    onToggle={() => toggleSection(section.id)}
+                  />
+                ))}
+                {totalQuestions === 0 && (
+                  <p className="py-8 text-center text-sm text-gray-400">
+                    No answerable questions found in this form.
+                  </p>
+                )}
+              </div>
+            )}
         </>
       )}
 
       {/* ── View: Individual ────────────────────────────────────────────── */}
-      {view === "individual" && <IndividualView responses={responses} />}
+      {view === "individual" && <IndividualView formId={formId} />}
     </div>
   );
 }

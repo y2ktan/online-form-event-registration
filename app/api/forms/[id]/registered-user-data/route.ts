@@ -38,6 +38,40 @@ export async function GET(
     const rows: Record<string, string>[] = JSON.parse(data.rows);
     console.log(`[API] Found ${rows.length} rows for form: ${id}`);
 
+    // ── tableView mode: paginated + searchable full-row list ──────────────
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get("tableView") === "1") {
+      const search = (searchParams.get("search") || "").trim().toLowerCase();
+      const pageNum = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
+      const pageSize = Math.min(
+        Math.max(parseInt(searchParams.get("pageSize") || "50", 10), 1),
+        200
+      );
+
+      const headers: string[] = JSON.parse(data.headers);
+
+      // Filter rows by search across all column values
+      const filtered = search
+        ? rows.filter((row) =>
+            Object.values(row).some((val) =>
+              String(val).toLowerCase().includes(search)
+            )
+          )
+        : rows;
+
+      const total = filtered.length;
+      const paged = filtered.slice((pageNum - 1) * pageSize, pageNum * pageSize);
+
+      return NextResponse.json({
+        headers,
+        rows: paged,
+        total,
+        page: pageNum,
+        pageSize,
+      });
+    }
+
+    // ── Default mode (settings UI) — unchanged ───────────────────────────
     return NextResponse.json({
       id: data.id,
       headers: JSON.parse(data.headers),
