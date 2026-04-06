@@ -47,17 +47,122 @@ export async function GET(
         Math.max(parseInt(searchParams.get("pageSize") || "50", 10), 1),
         200
       );
+      const filter = searchParams.get("filter") || "all"; // all | responded | not_responded
 
       const headers: string[] = JSON.parse(data.headers);
+      const lookupCol = data.lookupColumn || "";
+      const lookupQid = data.lookupQuestionId || "";
 
-      // Filter rows by search across all column values
-      const filtered = search
-        ? rows.filter((row) =>
+      // Build a set of responded lookup values (always, for accurate counts)
+      let respondedValues: Set<string> = new Set();
+      const lookupConfigured = !!(lookupCol && lookupQid);
+
+      if (lookupConfigured) {
+        // Use raw query to avoid Prisma distinct compatibility issues with SQLite
+        const answerRows = await prisma.answer.findMany({
+          where: {
+            questionId: lookupQid,
+            response: { formId: id },
+          },
+          select: { value: true },
+        });
+        for (const a of answerRows) {
+          const v = (a as { value: string }).value.trim().toLowerCase();
+          if (v) respondedValues.add(v);
+        }
+      }
+
+      // Classify each XLSX row as responded or not
+      const matchRow = (row: Record<string, string>) =>
+        lookupConfigured &&
+        respondedValues.has(String(row[lookupCol] ?? "").trim().toLowerCase());
+
+      // Compute actual counts (before search filter)
+      let respondedCount = 0;
+      let notRespondedCount = 0;
+      const registeredValues = new Set<string>();
+      if (lookupConfigured) {
+        for (const row of rows) {
+          const v = String(row[lookupCol] ?? "").trim().toLowerCase();
+          if (v) registeredValues.add(v);
+          if (matchRow(row)) respondedCount++;
+          else notRespondedCount++;
+        }
+      }
+      // Count total responses to compute new users
+      const totalResponseCount = await prisma.response.count({ where: { formId: id } });
+      const newUsersCount = lookupConfigured
+        ? Math.max(0, totalResponseCount - respondedCount)
+        : 0;
+
+      // Handle "new_users" filter — responses not matched to any registered user
+      if (lookupConfigured && filter === "new_users") {
+        // Get all responses for this form
+        const allResponses = await prisma.response.findMany({
+          where: { formId: id },
+          select: {
+            shortCode: true,
+            phoneNumber: true,
+            createdAt: true,
+            answers: {
+              where: { questionId: lookupQid },
+              select: { value: true },
+              take: 1,
+            },
+          },
+        });
+        // Filter to responses whose lookup answer is blank or not in registered list
+        let newUserRows = allResponses
+          .filter((r) => {
+            const lookupVal = r.answers[0]?.value?.trim().toLowerCase() || "";
+            return !lookupVal || !registeredValues.has(lookupVal);
+          })
+          .map((r) => ({
+            [lookupCol]: r.answers[0]?.value || "—",
+            Phone: r.phoneNumber || "—",
+            "Short Code": r.shortCode,
+            "Submitted At": r.createdAt.toISOString().split("T")[0],
+          }));
+        if (search) {
+          newUserRows = newUserRows.filter((row) =>
             Object.values(row).some((val) =>
               String(val).toLowerCase().includes(search)
             )
+          );
+        }
+        const totalNew = newUserRows.length;
+        const pagedNew = newUserRows.slice(
+          (pageNum - 1) * pageSize,
+          pageNum * pageSize
+        );
+        return NextResponse.json({
+          headers: [lookupCol, "Phone", "Short Code", "Submitted At"],
+          rows: pagedNew,
+          total: totalNew,
+          page: pageNum,
+          pageSize,
+          lookupConfigured,
+          respondedCount,
+          notRespondedCount,
+          newUsersCount,
+        });
+      }
+
+      // Apply filter
+      let filtered = rows;
+      if (lookupConfigured && filter === "responded") {
+        filtered = filtered.filter(matchRow);
+      } else if (lookupConfigured && filter === "not_responded") {
+        filtered = filtered.filter((row) => !matchRow(row));
+      }
+
+      if (search) {
+        filtered = filtered.filter((row) =>
+          Object.values(row).some((val) =>
+            String(val).toLowerCase().includes(search)
           )
-        : rows;
+        );
+      }
 
       const total = filtered.length;
       const paged = filtered.slice((pageNum - 1) * pageSize, pageNum * pageSize);
@@ -68,6 +173,10 @@ export async function GET(
         total,
         page: pageNum,
         pageSize,
+        lookupConfigured,
+        respondedCount,
+        notRespondedCount,
+        newUsersCount,
       });
     }
 

@@ -19,6 +19,7 @@ export interface CsvResponse {
   createdAt: string;
   updatedAt: string;
   answers: { questionId: string; value: string }[];
+  isNewUser?: boolean;
 }
 
 export interface CsvQuestion {
@@ -40,11 +41,13 @@ export function responsesToCsv(
   questions: CsvQuestion[],
   includePhone: boolean,
   baseUrl?: string,
+  includeNewUser?: boolean,
 ): string {
   const headers: string[] = ["Submission ID"];
   if (includePhone) headers.push("Phone");
   headers.push("Submitted At", "Updated At");
   for (const q of questions) headers.push(q.type === "SELFIE" ? "Profile Photo" : (q.label || "Untitled"));
+  if (includeNewUser) headers.push("Is New User");
 
   const rows: string[] = [headers.map(escapeCsvField).join(",")];
 
@@ -60,6 +63,7 @@ export function responsesToCsv(
       const raw = answerMap.get(q.id) || "";
       cols.push(formatAnswerForCsv(raw, q.type, baseUrl, q.config));
     }
+    if (includeNewUser) cols.push(resp.isNewUser ? "Yes" : "No");
 
     rows.push(cols.map(escapeCsvField).join(","));
   }

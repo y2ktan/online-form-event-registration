@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, canEditForm } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { responsesToCsv } from "@/lib/csv";
+import { ensureRegisteredUserDataTable } from "../registered-user-data/_ensure-table";
 
 export async function GET(
   request: NextRequest,
@@ -71,7 +72,36 @@ export async function GET(
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     answers: r.answers.map((a) => ({ questionId: a.questionId, value: a.value })),
+    isNewUser: false,
   }));
+
+  // Check if user profile is uploaded with lookup configured → add "Is New User" column
+  let includeNewUser = false;
+  try {
+    await ensureRegisteredUserDataTable();
+    const regData = await (prisma as any).registeredUserData.findUnique({
+      where: { formId: id },
+      select: { rows: true, lookupColumn: true, lookupQuestionId: true },
+    });
+    if (regData?.lookupColumn && regData?.lookupQuestionId) {
+      includeNewUser = true;
+      const regRows: Record<string, string>[] = JSON.parse(regData.rows);
+      const registeredValues = new Set<string>();
+      for (const row of regRows) {
+        const v = String(row[regData.lookupColumn] ?? "").trim().toLowerCase();
+        if (v) registeredValues.add(v);
+      }
+      for (const entry of csvData) {
+        const lookupAnswer = entry.answers.find(
+          (a) => a.questionId === regData.lookupQuestionId
+        );
+        const val = (lookupAnswer?.value ?? "").trim().toLowerCase();
+        entry.isNewUser = !val || !registeredValues.has(val);
+      }
+    }
+  } catch {
+    // Registered user data table may not exist — skip
+  }
 
   // Build base URL for absolute links (selfie photos)
   const baseUrl =
@@ -82,7 +112,7 @@ export async function GET(
       return `${proto}://${host}`;
     })();
 
-  const csv = responsesToCsv(csvData, questions, form.collectPhone, baseUrl);
+  const csv = responsesToCsv(csvData, questions, form.collectPhone, baseUrl, includeNewUser);
   const safeTitle = (form.title || "responses").replace(/[^a-zA-Z0-9-_ ]/g, "").slice(0, 50);
 
   return new NextResponse(csv, {

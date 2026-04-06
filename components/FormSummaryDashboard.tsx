@@ -45,6 +45,9 @@ interface SummaryData {
   sections: SectionSummary[];
   totalResponses: number;
   userProfileCount: number | null;
+  respondedRegistered: number;
+  notYetRegistered: number;
+  newUsers: number;
 }
 
 interface RegUserTableData {
@@ -53,6 +56,10 @@ interface RegUserTableData {
   total: number;
   page: number;
   pageSize: number;
+  lookupConfigured: boolean;
+  respondedCount: number;
+  notRespondedCount: number;
+  newUsersCount: number;
 }
 
 interface FormSummaryDashboardProps {
@@ -208,28 +215,34 @@ function NonRespondentsPanel({
   formId,
   totalResponses,
   userProfileCount,
+  respondedRegistered,
+  notYetRegistered,
+  newUsersCount,
 }: {
   formId: string;
   totalResponses: number;
   userProfileCount: number;
+  respondedRegistered: number;
+  notYetRegistered: number;
+  newUsersCount: number;
 }) {
   const [open, setOpen] = useState(false);
   const [tableData, setTableData] = useState<RegUserTableData | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<"all" | "responded" | "not_responded" | "new_users">("all");
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const notYet = Math.max(0, userProfileCount - totalResponses);
-
   const fetchTable = useCallback(
-    async (p: number, q: string) => {
+    async (p: number, q: string, f: string = "all") => {
       setLoading(true);
       try {
         const params = new URLSearchParams({
           tableView: "1",
           page: String(p),
           pageSize: "50",
+          filter: f,
         });
         if (q.trim()) params.set("search", q.trim());
         const res = await fetch(
@@ -248,8 +261,8 @@ function NonRespondentsPanel({
 
   // Fetch on open
   useEffect(() => {
-    if (open && !tableData) fetchTable(1, "");
-  }, [open, tableData, fetchTable]);
+    if (open && !tableData) fetchTable(1, "", filter);
+  }, [open, tableData, fetchTable, filter]);
 
   // Debounced search
   const onSearchChange = (val: string) => {
@@ -257,13 +270,20 @@ function NonRespondentsPanel({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setPage(1);
-      fetchTable(1, val);
+      fetchTable(1, val, filter);
     }, 400);
+  };
+
+  const onFilterChange = (f: "all" | "responded" | "not_responded" | "new_users") => {
+    setFilter(f);
+    setPage(1);
+    setTableData(null); // force re-fetch
+    fetchTable(1, search, f);
   };
 
   const goPage = (p: number) => {
     setPage(p);
-    fetchTable(p, search);
+    fetchTable(p, search, filter);
   };
 
   const totalPages = tableData
@@ -292,13 +312,18 @@ function NonRespondentsPanel({
           <span>
             Registered: <strong>{userProfileCount}</strong>
           </span>
-          <span>
-            Responded: <strong>{totalResponses}</strong>
+          <span className="text-green-600">
+            Responded: <strong>{respondedRegistered}</strong>
           </span>
-          {notYet > 0 && (
+          {notYetRegistered > 0 && (
             <span className="flex items-center gap-1 text-orange-600 font-semibold">
               <AlertCircle className="h-3 w-3" />
-              Not yet: {notYet}
+              Not yet: {notYetRegistered}
+            </span>
+          )}
+          {newUsersCount > 0 && (
+            <span className="text-emerald-600 font-semibold">
+              New: {newUsersCount}
             </span>
           )}
         </div>
@@ -307,6 +332,66 @@ function NonRespondentsPanel({
       {/* Expandable table */}
       {open && (
         <div className="border-t border-gray-100 p-4 space-y-3">
+          {/* Filter toggles */}
+          <div className="flex flex-wrap rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden w-fit">
+            {(
+              [
+                { key: "all" as const, label: "All", count: userProfileCount },
+                {
+                  key: "responded" as const,
+                  label: "Responded",
+                  count: tableData?.lookupConfigured
+                    ? tableData.respondedCount
+                    : respondedRegistered,
+                },
+                {
+                  key: "not_responded" as const,
+                  label: "Not Yet",
+                  count: tableData?.lookupConfigured
+                    ? tableData.notRespondedCount
+                    : notYetRegistered,
+                },
+                {
+                  key: "new_users" as const,
+                  label: "New Users",
+                  count: tableData?.lookupConfigured
+                    ? tableData.newUsersCount
+                    : newUsersCount,
+                },
+              ]
+            ).map(({ key, label, count }) => (
+              <button
+                key={key}
+                onClick={() => onFilterChange(key)}
+                disabled={!tableData?.lookupConfigured && key !== "all"}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  filter === key
+                    ? key === "not_responded"
+                      ? "bg-orange-600 text-white"
+                      : key === "responded"
+                        ? "bg-green-600 text-white"
+                        : key === "new_users"
+                          ? "bg-emerald-600 text-white"
+                          : "bg-indigo-600 text-white"
+                    : "text-gray-600 hover:bg-gray-50"
+                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                title={
+                  !tableData?.lookupConfigured && key !== "all"
+                    ? "Configure a lookup column in User Profile settings to enable this filter"
+                    : undefined
+                }
+              >
+                {label} ({count})
+              </button>
+            ))}
+          </div>
+          {tableData && !tableData.lookupConfigured && filter !== "all" && (
+            <p className="text-xs text-amber-600">
+              Lookup column not configured — cannot distinguish responded vs not-responded users.
+              Configure it in the User Profile tab.
+            </p>
+          )}
+
           {/* Search */}
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -322,7 +407,7 @@ function NonRespondentsPanel({
                 onClick={() => {
                   setSearch("");
                   setPage(1);
-                  fetchTable(1, "");
+                  fetchTable(1, "", filter);
                 }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:text-gray-600"
                 aria-label="Clear search"
@@ -717,13 +802,22 @@ export default function FormSummaryDashboard({
                 accent="text-blue-600"
               />
               <StatCard
+                label="Responded"
+                value={summaryData.respondedRegistered}
+                accent="text-green-600"
+              />
+              <StatCard
                 label="Not Yet"
-                value={Math.max(
-                  0,
-                  summaryData.userProfileCount - summaryData.totalResponses
-                )}
+                value={summaryData.notYetRegistered}
                 accent="text-orange-600"
               />
+              {summaryData.newUsers > 0 && (
+                <StatCard
+                  label="New Users"
+                  value={summaryData.newUsers}
+                  accent="text-emerald-600"
+                />
+              )}
             </>
           )}
         </div>
@@ -783,6 +877,9 @@ export default function FormSummaryDashboard({
           formId={formId}
           totalResponses={summaryData.totalResponses}
           userProfileCount={summaryData.userProfileCount}
+          respondedRegistered={summaryData.respondedRegistered}
+          notYetRegistered={summaryData.notYetRegistered}
+          newUsersCount={summaryData.newUsers}
         />
       )}
 

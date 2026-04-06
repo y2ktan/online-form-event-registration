@@ -145,17 +145,45 @@ export async function GET(
     // 6. Total response count
     const totalResponses = await prisma.response.count({ where: { formId } });
 
-    // 7. User profile count (XLSX registered data)
+    // 7. Cross-reference registered users vs actual responses
     let userProfileCount: number | null = null;
+    let respondedRegistered = 0;
+    let notYetRegistered = 0;
+    let newUsers = 0;
     try {
       await ensureRegisteredUserDataTable();
       const regData = await (prisma as any).registeredUserData.findUnique({
         where: { formId },
-        select: { rows: true },
+        select: { rows: true, lookupColumn: true, lookupQuestionId: true },
       });
       if (regData) {
-        const rows: unknown[] = JSON.parse(regData.rows);
+        const rows: Record<string, string>[] = JSON.parse(regData.rows);
         userProfileCount = rows.length;
+        const lookupCol: string = regData.lookupColumn || "";
+        const lookupQid: string = regData.lookupQuestionId || "";
+        if (lookupCol && lookupQid) {
+          const registeredValues = new Set<string>();
+          for (const row of rows) {
+            const v = String(row[lookupCol] ?? "").trim().toLowerCase();
+            if (v) registeredValues.add(v);
+          }
+          const answerRows = await prisma.answer.findMany({
+            where: { questionId: lookupQid, response: { formId } },
+            select: { value: true },
+          });
+          const respondedValues = new Set<string>();
+          for (const a of answerRows) {
+            const v = (a.value ?? "").trim().toLowerCase();
+            if (v) respondedValues.add(v);
+          }
+          for (const rv of registeredValues) {
+            if (respondedValues.has(rv)) respondedRegistered++;
+            else notYetRegistered++;
+          }
+          // Any response not matched to a registered user = new user
+          // (includes blank/missing lookup answers)
+          newUsers = totalResponses - respondedRegistered;
+        }
       }
     } catch {
       // Table may not exist yet — safe to ignore
@@ -165,6 +193,9 @@ export async function GET(
       sections: sectionSummaries,
       totalResponses,
       userProfileCount,
+      respondedRegistered,
+      notYetRegistered,
+      newUsers,
     });
   } catch (err) {
     console.error("GET /api/forms/[id]/summary error:", err);
