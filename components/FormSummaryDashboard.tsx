@@ -16,6 +16,14 @@ import {
   Users,
   AlertCircle,
 } from "lucide-react";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+} from "recharts";
 import AnswerChart from "@/components/charts/AnswerChart";
 import { parseConfig, type QuestionSummary, type SectionSummary } from "@/lib/summary-helpers";
 import { QUESTION_TYPE_LABELS } from "@/lib/question-types";
@@ -48,6 +56,7 @@ interface SummaryData {
   respondedRegistered: number;
   notYetRegistered: number;
   newUsers: number;
+  lookupConfigured: boolean;
 }
 
 interface RegUserTableData {
@@ -57,6 +66,7 @@ interface RegUserTableData {
   page: number;
   pageSize: number;
   lookupConfigured: boolean;
+  lookupColumn: string;
   respondedCount: number;
   notRespondedCount: number;
   newUsersCount: number;
@@ -110,6 +120,7 @@ function relativeTime(isoStr: string): string {
 }
 
 const TYPE_LABELS: Record<string, string> = QUESTION_TYPE_LABELS;
+const PIE_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444"];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -155,6 +166,119 @@ function QuestionCard({
         </span>
       </div>
       {children}
+    </div>
+  );
+}
+
+function SummaryPieCharts({
+  totalResponses,
+  respondedRegistered,
+  notYetRegistered,
+  newUsers,
+}: {
+  totalResponses: number;
+  respondedRegistered: number;
+  notYetRegistered: number;
+  newUsers: number;
+}) {
+  const responseData = [
+    { name: "Registered Responses", value: respondedRegistered },
+    { name: "New User Responses", value: newUsers },
+  ].filter((item) => item.value > 0);
+
+  const profileData = [
+    { name: "Responded", value: respondedRegistered },
+    { name: "Not Yet", value: notYetRegistered },
+  ].filter((item) => item.value > 0);
+
+  const renderLabel = ({ percent }: { percent?: number }) => {
+    const value = Math.round((percent ?? 0) * 100);
+    return value > 0 ? `${value}%` : "";
+  };
+
+  const toNumber = (
+    value: number | string | Array<number | string> | ReadonlyArray<number | string> | undefined
+  ): number => {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : 0;
+    }
+    if (Array.isArray(value) && value.length > 0) {
+      const first = Number(value[0]);
+      return Number.isFinite(first) ? first : 0;
+    }
+    return 0;
+  };
+
+  const responseTooltipFormatter = (
+    value: number | string | Array<number | string> | ReadonlyArray<number | string> | undefined
+  ): [string, string] => {
+    const numeric = toNumber(value);
+    const pct = totalResponses > 0 ? Math.round((numeric / totalResponses) * 100) : 0;
+    return [`${numeric} (${pct}%)`, "Count"];
+  };
+
+  const profileTooltipFormatter = (
+    value: number | string | Array<number | string> | ReadonlyArray<number | string> | undefined
+  ): [string, string] => {
+    const numeric = toNumber(value);
+    const base = respondedRegistered + notYetRegistered;
+    const pct = base > 0 ? Math.round((numeric / base) * 100) : 0;
+    return [`${numeric} (${pct}%)`, "Count"];
+  };
+
+  if (responseData.length === 0 && profileData.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">Responses Overview</h3>
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie
+              data={responseData}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={78}
+              label={renderLabel}
+              labelLine={false}
+            >
+              {responseData.map((entry, index) => (
+                <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={responseTooltipFormatter} />
+            <Legend formatter={(value) => <span className="text-xs text-gray-700">{value}</span>} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">User Profile Overview</h3>
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie
+              data={profileData}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={78}
+              label={renderLabel}
+              labelLine={false}
+            >
+              {profileData.map((entry, index) => (
+                <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={profileTooltipFormatter} />
+            <Legend formatter={(value) => <span className="text-xs text-gray-700">{value}</span>} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -218,6 +342,9 @@ function NonRespondentsPanel({
   respondedRegistered,
   notYetRegistered,
   newUsersCount,
+  lookupConfigured,
+  questions,
+  onConfigSaved,
 }: {
   formId: string;
   totalResponses: number;
@@ -225,6 +352,9 @@ function NonRespondentsPanel({
   respondedRegistered: number;
   notYetRegistered: number;
   newUsersCount: number;
+  lookupConfigured: boolean;
+  questions: { id: string; label: string; type: string }[];
+  onConfigSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [tableData, setTableData] = useState<RegUserTableData | null>(null);
@@ -233,6 +363,9 @@ function NonRespondentsPanel({
   const [filter, setFilter] = useState<"all" | "responded" | "not_responded" | "new_users">("all");
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [configCol, setConfigCol] = useState("");
+  const [configQid, setConfigQid] = useState("");
+  const [configSaving, setConfigSaving] = useState(false);
 
   const fetchTable = useCallback(
     async (p: number, q: string, f: string = "all") => {
@@ -312,18 +445,27 @@ function NonRespondentsPanel({
           <span>
             Registered: <strong>{userProfileCount}</strong>
           </span>
-          <span className="text-green-600">
-            Responded: <strong>{respondedRegistered}</strong>
-          </span>
-          {notYetRegistered > 0 && (
-            <span className="flex items-center gap-1 text-orange-600 font-semibold">
+          {lookupConfigured ? (
+            <>
+              <span className="text-green-600">
+                Responded: <strong>{respondedRegistered}</strong>
+              </span>
+              {notYetRegistered > 0 && (
+                <span className="flex items-center gap-1 text-orange-600 font-semibold">
+                  <AlertCircle className="h-3 w-3" />
+                  Not yet: {notYetRegistered}
+                </span>
+              )}
+              {newUsersCount > 0 && (
+                <span className="text-emerald-600 font-semibold">
+                  New: {newUsersCount}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="flex items-center gap-1 text-amber-600">
               <AlertCircle className="h-3 w-3" />
-              Not yet: {notYetRegistered}
-            </span>
-          )}
-          {newUsersCount > 0 && (
-            <span className="text-emerald-600 font-semibold">
-              New: {newUsersCount}
+              Lookup not configured
             </span>
           )}
         </div>
@@ -385,11 +527,68 @@ function NonRespondentsPanel({
               </button>
             ))}
           </div>
-          {tableData && !tableData.lookupConfigured && filter !== "all" && (
-            <p className="text-xs text-amber-600">
-              Lookup column not configured — cannot distinguish responded vs not-responded users.
-              Configure it in the User Profile tab.
-            </p>
+          {tableData && !tableData.lookupConfigured && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                <p className="text-xs font-medium text-amber-800">
+                  Link a spreadsheet column to a form question to track who has responded.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Spreadsheet Column</label>
+                  <select
+                    value={configCol}
+                    onChange={(e) => setConfigCol(e.target.value)}
+                    className="block w-48 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">— Select column —</option>
+                    {tableData.headers.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Form Question</label>
+                  <select
+                    value={configQid}
+                    onChange={(e) => setConfigQid(e.target.value)}
+                    className="block w-56 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">— Select question —</option>
+                    {questions.map((q) => (
+                      <option key={q.id} value={q.id}>{q.label} ({q.type})</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  disabled={!configCol || !configQid || configSaving}
+                  onClick={async () => {
+                    setConfigSaving(true);
+                    try {
+                      const res = await fetch(`/api/forms/${formId}/registered-user-data`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          lookupColumn: configCol,
+                          lookupQuestionId: configQid,
+                          mappings: { [configQid]: configCol },
+                        }),
+                      });
+                      if (res.ok) {
+                        setTableData(null);
+                        onConfigSaved();
+                      }
+                    } catch { /* ignore */ }
+                    setConfigSaving(false);
+                  }}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {configSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Search */}
@@ -880,6 +1079,11 @@ export default function FormSummaryDashboard({
           respondedRegistered={summaryData.respondedRegistered}
           notYetRegistered={summaryData.notYetRegistered}
           newUsersCount={summaryData.newUsers}
+          lookupConfigured={summaryData.lookupConfigured}
+          questions={summaryData.sections
+            .flatMap((s) => s.questions)
+            .map((q) => ({ id: q.questionId, label: q.label, type: q.type }))}
+          onConfigSaved={fetchSummary}
         />
       )}
 
@@ -910,6 +1114,14 @@ export default function FormSummaryDashboard({
             summaryData &&
             summaryData.totalResponses > 0 && (
               <div className="space-y-4">
+                {summaryData.userProfileCount !== null && (
+                  <SummaryPieCharts
+                    totalResponses={summaryData.totalResponses}
+                    respondedRegistered={summaryData.respondedRegistered}
+                    notYetRegistered={summaryData.notYetRegistered}
+                    newUsers={summaryData.newUsers}
+                  />
+                )}
                 {summaryData.sections.map((section) => (
                   <SectionAccordion
                     key={section.id}

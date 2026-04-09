@@ -2799,6 +2799,19 @@ function FormBuilderPageInner() {
                   <Download className="h-4 w-4" />
                   <span className="hidden sm:inline">Export CSV</span>
                 </button>
+                <button
+                  onClick={() => {
+                    const a = document.createElement("a");
+                    a.href = `/api/forms/${formId}/export-xlsx`;
+                    a.download = "";
+                    a.click();
+                  }}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 shadow-sm"
+                  title="Export responses as XLSX with analytics"
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">Export XLSX</span>
+                </button>
               </div>
             </div>
             {responsesLoading ? (

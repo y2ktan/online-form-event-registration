@@ -150,6 +150,7 @@ export async function GET(
     let respondedRegistered = 0;
     let notYetRegistered = 0;
     let newUsers = 0;
+    let lookupConfigured = false;
     try {
       await ensureRegisteredUserDataTable();
       const regData = await (prisma as any).registeredUserData.findUnique({
@@ -162,6 +163,7 @@ export async function GET(
         const lookupCol: string = regData.lookupColumn || "";
         const lookupQid: string = regData.lookupQuestionId || "";
         if (lookupCol && lookupQid) {
+          lookupConfigured = true;
           const registeredValues = new Set<string>();
           for (const row of rows) {
             const v = String(row[lookupCol] ?? "").trim().toLowerCase();
@@ -196,6 +198,7 @@ export async function GET(
       respondedRegistered,
       notYetRegistered,
       newUsers,
+      lookupConfigured,
     });
   } catch (err) {
     console.error("GET /api/forms/[id]/summary error:", err);
