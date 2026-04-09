@@ -12,6 +12,7 @@ WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
+COPY scripts ./scripts
 
 # Configure npm for better network reliability
 RUN npm config set fetch-retries 5 && \
@@ -71,6 +72,9 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || '3000') + '/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"
 
 # server.js is created by next build from the standalone output
 CMD ["node", "server.js"]

@@ -34,6 +34,26 @@ docker push ghcr.io/y2ktan/ai-form-registration:latest
 docker push ghcr.io/y2ktan/ai-form-registration:init
 ```
 
+### Optional: One-step Build + Push (recommended for VPS)
+
+Use `buildx` to publish directly to GHCR (especially useful when building on macOS for Linux VPS):
+
+```bash
+# App image
+docker buildx build . \
+  --target runner \
+  --platform linux/amd64 \
+  -t ghcr.io/y2ktan/ai-form-registration:latest \
+  --push
+
+# Init image
+docker buildx build . \
+  --target init \
+  --platform linux/amd64 \
+  -t ghcr.io/y2ktan/ai-form-registration:init \
+  --push
+```
+
 ---
 
 ## 3. VPS Deployment
