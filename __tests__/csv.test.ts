@@ -49,13 +49,13 @@ describe("responsesToCsv", () => {
   test("generates header row with phone when includePhone is true", () => {
     const csv = responsesToCsv([], questions, true);
     const header = csv.split("\n")[0];
-    expect(header).toBe("Submission ID,Phone,Submitted At,Updated At,Name,Hobbies");
+    expect(header).toBe("\uFEFFSubmission ID,Phone,Submitted At,Updated At,Name,Hobbies");
   });
 
   test("generates header row without phone when includePhone is false", () => {
     const csv = responsesToCsv([], questions, false);
     const header = csv.split("\n")[0];
-    expect(header).toBe("Submission ID,Submitted At,Updated At,Name,Hobbies");
+    expect(header).toBe("\uFEFFSubmission ID,Submitted At,Updated At,Name,Hobbies");
   });
 
   test("generates correct data rows", () => {
@@ -170,7 +170,7 @@ describe("responsesToCsv", () => {
 
   test("handles empty questions list", () => {
     const csv = responsesToCsv([], [], false);
-    expect(csv).toBe("Submission ID,Submitted At,Updated At");
+    expect(csv).toBe("\uFEFFSubmission ID,Submitted At,Updated At");
   });
 
   test("uses 'Untitled' for questions with empty label", () => {

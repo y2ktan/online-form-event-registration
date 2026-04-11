@@ -68,7 +68,8 @@ export function responsesToCsv(
     rows.push(cols.map(escapeCsvField).join(","));
   }
 
-  return rows.join("\n");
+  // UTF-8 BOM so Excel detects encoding for non-ASCII characters
+  return "\uFEFF" + rows.join("\n");
 }
 
 /** Format a stored answer value for human-readable CSV output. */
