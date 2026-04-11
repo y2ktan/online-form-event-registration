@@ -88,6 +88,45 @@ export async function POST(
     });
   }
 
+  // ── bulkResend: send QR + edit link to ALL respondents ─────────────────────
+  if (action === "bulkResend") {
+    const responses = await prisma.response.findMany({
+      where: { formId, phoneNumber: { not: null } },
+      select: { id: true, phoneNumber: true, shortCode: true, editToken: true },
+    });
+    const withPhone = responses.filter((r) => r.phoneNumber);
+    if (!withPhone.length) {
+      return NextResponse.json({ success: true, message: "No respondents with phone numbers found.", sent: 0, failed: 0 });
+    }
+
+    const customTpl = typeof body.message === "string" ? body.message.trim() : "";
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < withPhone.length; i += 5) {
+      const batch = withPhone.slice(i, i + 5);
+      const results = await Promise.allSettled(
+        batch.map((r) => {
+          const editLink = `${origin}/edit/${r.id}?token=${r.editToken}`;
+          const qrLink = form.shortCode ? `${origin}/f/${form.shortCode}` : `${origin}/form/${formId}`;
+          const content = customTpl
+            ? `\u2705 *${form.title}*\n\n${customTpl.replace(/\{shortCode\}/g, r.shortCode).replace(/\{editLink\}/g, editLink).replace(/\{qrLink\}/g, qrLink)}`
+            : buildQrEditMessage(form.title, r.shortCode, editLink);
+          return sendMessage(config, content, [r.phoneNumber!]);
+        }),
+      );
+      for (const res of results) {
+        if (res.status === "fulfilled" && res.value.success) sent++;
+        else failed++;
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Sent ${sent}/${withPhone.length}, ${failed} failed.`,
+      total: withPhone.length, sent, failed,
+    });
+  }
+
   // ── reminder: non-submitters only ─────────────────────────────────────────
   if (action === "reminder") {
     const phones = await getNonSubmitterPhones(formId);
@@ -98,7 +137,10 @@ export async function POST(
     const formLink = form.shortCode
       ? `${origin}/f/${form.shortCode}`
       : `${origin}/form/${formId}`;
-    const content = buildReminderMessage(form.title, formLink);
+    const customTpl = typeof body.message === "string" ? body.message.trim() : "";
+    const content = customTpl
+      ? `\uD83D\uDCCB *Reminder: ${form.title}*\n\n${customTpl.replace(/\{formLink\}/g, formLink)}`
+      : buildReminderMessage(form.title, formLink);
     const result = await sendBulk(config, content, phones);
 
     return NextResponse.json({
@@ -118,7 +160,10 @@ export async function POST(
     const formLink = form.shortCode
       ? `${origin}/f/${form.shortCode}`
       : `${origin}/form/${formId}`;
-    const content = buildReminderMessage(form.title, formLink);
+    const customTpl = typeof body.message === "string" ? body.message.trim() : "";
+    const content = customTpl
+      ? `\uD83D\uDCCB *Reminder: ${form.title}*\n\n${customTpl.replace(/\{formLink\}/g, formLink)}`
+      : buildReminderMessage(form.title, formLink);
     const result = await sendBulk(config, content, phones);
 
     return NextResponse.json({

@@ -1248,6 +1248,12 @@ function FormBuilderPageInner() {
   const [messagingAction, setMessagingAction] = useState<{ loading: boolean; result: string; type: string }>({ loading: false, result: "", type: "" });
   const [engagementMsg, setEngagementMsg] = useState("");
   const [messagingEnabled, setMessagingEnabled] = useState(false);
+  const [quickActionMsgs, setQuickActionMsgs] = useState({
+    bulkResend: "Your submission ID: {shortCode}\n\nView your QR code:\n{qrLink}\n\nEdit your response:\n{editLink}\n\nPlease keep this message for your reference.",
+    reminder: "You have not yet submitted your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
+    bulkReminder: "This is a reminder to submit your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
+  });
+  const [expandedAction, setExpandedAction] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/messaging").then(r => r.ok ? r.json() : null).then(d => {
@@ -3165,7 +3171,7 @@ function FormBuilderPageInner() {
                         }
                       }}
                       disabled={messagingAction.loading}
-                      className="flex shrink-0 items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-500 disabled:opacity-50 sm:text-sm"
+                      className="flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-500 disabled:opacity-50 sm:w-auto sm:justify-start sm:text-sm"
                     >
                       <Send className="h-3.5 w-3.5" />
                       {messagingAction.loading && messagingAction.type === "bulkReminder" ? "Sending..." : "Send to All"}
@@ -3347,7 +3353,7 @@ function FormBuilderPageInner() {
                     }
                   }}
                   disabled={messagingAction.loading}
-                  className="flex shrink-0 items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+                  className="flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50 sm:w-auto sm:justify-start"
                 >
                   <Send className="h-4 w-4" />
                   {messagingAction.loading && messagingAction.type === "reminder" ? "Sending..." : "Send Reminder"}
@@ -3419,7 +3425,7 @@ function FormBuilderPageInner() {
                       }
                     }}
                     disabled={messagingAction.loading || !engagementMsg.trim()}
-                    className="flex shrink-0 items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
+                    className="flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50 sm:w-auto sm:justify-start"
                   >
                     <Send className="h-4 w-4" />
                     {messagingAction.loading && messagingAction.type === "custom" ? "Sending..." : "Send Message"}
@@ -3435,62 +3441,54 @@ function FormBuilderPageInner() {
             {/* Quick actions card */}
             <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  onClick={() => {
-                    if (confirm("Send QR code + edit link to ALL respondents?")) {
-                      sendMessagingAction("bulkResend");
-                    }
-                  }}
-                  disabled={messagingAction.loading}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
-                >
-                  <div className="rounded-full bg-indigo-100 p-2">
-                    <ClipboardCopy className="h-4 w-4 text-indigo-600" />
+              <div className="space-y-3">
+                {[
+                  { key: "bulkResend" as const, label: "Resend QR & Links", desc: "Send QR code and edit link to all respondents", icon: <ClipboardCopy className="h-4 w-4 text-indigo-600" />, bg: "bg-indigo-100", confirm: "Send QR code + edit link to ALL respondents?", hint: "Placeholders: {shortCode}, {qrLink}, {editLink}" },
+                  { key: "reminder" as const, label: "Remind Non-Submitters", desc: "Remind registered users who haven't submitted", icon: <Send className="h-4 w-4 text-amber-600" />, bg: "bg-amber-100", confirm: "Send reminder to all registered users who haven't submitted?", hint: "Placeholders: {formLink}" },
+                  { key: "bulkReminder" as const, label: "Remind All Users", desc: "Send reminder to every registered user", icon: <Users className="h-4 w-4 text-blue-600" />, bg: "bg-blue-100", confirm: "Send reminder to ALL registered users?", hint: "Placeholders: {formLink}" },
+                ].map((qa) => (
+                  <div key={qa.key} className="rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-3 p-3">
+                      <div className={`shrink-0 rounded-full ${qa.bg} p-2`}>{qa.icon}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900">{qa.label}</p>
+                        <p className="text-xs text-gray-500 truncate">{qa.desc}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          onClick={() => setExpandedAction(expandedAction === qa.key ? null : qa.key)}
+                          className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                          title="Customize message"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { if (confirm(qa.confirm)) sendMessagingAction(qa.key, { message: quickActionMsgs[qa.key] }); }}
+                          disabled={messagingAction.loading}
+                          className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          {messagingAction.loading && messagingAction.type === qa.key ? "Sending…" : "Send"}
+                        </button>
+                      </div>
+                    </div>
+                    {expandedAction === qa.key && (
+                      <div className="border-t border-gray-100 px-3 pb-3 pt-2">
+                        <textarea
+                          value={quickActionMsgs[qa.key]}
+                          onChange={(e) => setQuickActionMsgs((prev) => ({ ...prev, [qa.key]: e.target.value }))}
+                          rows={4}
+                          maxLength={2000}
+                          className="block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <p className="mt-1 text-xs text-gray-400">{qa.hint}</p>
+                      </div>
+                    )}
+                    {messagingAction.result && messagingAction.type === qa.key && (
+                      <div className="border-t border-gray-100 px-3 py-2 text-sm text-gray-700">{messagingAction.result}</div>
+                    )}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Resend QR & Links</p>
-                    <p className="text-xs text-gray-500">Send QR code and edit link to all respondents</p>
-                  </div>
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm("Send reminder to all registered users who haven't submitted?")) {
-                      sendMessagingAction("reminder");
-                    }
-                  }}
-                  disabled={messagingAction.loading}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
-                >
-                  <div className="rounded-full bg-amber-100 p-2">
-                    <Send className="h-4 w-4 text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Remind Non-Submitters</p>
-                    <p className="text-xs text-gray-500">Remind registered users who haven&apos;t submitted</p>
-                  </div>
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm("Send reminder to ALL registered users?")) {
-                      sendMessagingAction("bulkReminder");
-                    }
-                  }}
-                  disabled={messagingAction.loading}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
-                >
-                  <div className="rounded-full bg-blue-100 p-2">
-                    <Users className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Remind All Users</p>
-                    <p className="text-xs text-gray-500">Send reminder to every registered user</p>
-                  </div>
-                </button>
+                ))}
               </div>
-              {messagingAction.result && !["custom", "resend"].includes(messagingAction.type) && (
-                <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700">{messagingAction.result}</div>
-              )}
             </div>
           </div>
         )}
