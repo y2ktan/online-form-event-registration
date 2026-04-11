@@ -76,11 +76,13 @@ docker run -d \
   -e NEXTAUTH_URL="https://yourdomain.com" \
   -v ai-form-registration_db:/app/data \
   -v ai-form-registration_uploads:/app/public/uploads \
+  -v ai-form-registration_fonts:/app/public/fonts \
   ghcr.io/y2ktan/ai-form-registration:latest
 
 # 3. Run database migrations & seed (one-off, auto-removed after)
 docker run --rm \
   -e DATABASE_URL="file:/app/data/dev.db" \
+  -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
   -v ai-form-registration_db:/app/data \
   ghcr.io/y2ktan/ai-form-registration:init
 ```
@@ -107,11 +109,13 @@ docker run -d \
   -e NEXTAUTH_URL="https://yourdomain.com" \
   -v ai-form-registration_db:/app/data \
   -v ai-form-registration_uploads:/app/public/uploads \
+  -v ai-form-registration_fonts:/app/public/fonts \
   ghcr.io/y2ktan/ai-form-registration:latest
 
 # 4. If there are DB schema changes, run the init container
 docker run --rm \
   -e DATABASE_URL="file:/app/data/dev.db" \
+  -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
   -v ai-form-registration_db:/app/data \
   ghcr.io/y2ktan/ai-form-registration:init
 ```
@@ -121,9 +125,10 @@ docker run --rm \
 ## 4. Key Concepts
 
 * **Standalone Build**: `output: 'standalone'` in `next.config.mjs` produces a lean production image. The app container does not include the Prisma CLI — use the `init` image for DB operations.
-* **Persistent Volumes**: Two named volumes keep data safe across updates:
+* **Persistent Volumes**: Three named volumes keep data safe across updates:
   - `ai-form-registration_db` → SQLite database (`/app/data`)
   - `ai-form-registration_uploads` → uploaded photos/files (`/app/public/uploads`)
+  - `ai-form-registration_fonts` → custom fonts (`/app/public/fonts`)
 * **No `docker volume create` needed**: Docker auto-creates named volumes on first `docker run -v`.
 * **The `init` Image**: A one-off container (`--rm`) that runs `prisma db push` and `prisma db seed`, then exits. Use it whenever DB schema changes.
 
