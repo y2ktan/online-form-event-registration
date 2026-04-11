@@ -1,0 +1,74 @@
+const https = require('https');
+
+// --- Configuration ---
+const HOST = 'wabiwebhook.tzuchi.com.my';
+const PORT = 441; // As specified in the API documentation
+const PATH = '/api/sendMessage';
+const YOUR_TOKEN_ID = 'YOUR_ACTUAL_TOKEN_ID'; // <<< IMPORTANT: Replace with your actual Token ID
+const RECIPIENT_PHONE_NUMBER = '+60123456789'; // <<< IMPORTANT: Replace with the actual recipient's phone number
+
+// --- Message Data ---
+const messageData = {
+    "tokenId": YOUR_TOKEN_ID,
+    "sender": "WhatsApp", // Or 'SmsModem', 'SmsGateway', 'Email' based on your needs and API capabilities
+    "message": {
+        "content": "Hello welcome to Tzu Chi Malaysia. https://tzuchi.org.my/"
+    },
+    "recipients": [
+        RECIPIENT_PHONE_NUMBER
+    ]
+};
+
+// --- Prepare the JSON Payload ---
+const jsonString = JSON.stringify(messageData);
+const jsonBuffer = Buffer.from(jsonString, 'utf8');
+const jsonLength = jsonBuffer.byteLength;
+
+// Create a 4-byte buffer for the length (big-endian)
+const lengthBuffer = Buffer.alloc(4);
+lengthBuffer.writeUInt32BE(jsonLength, 0); // Write length as a 32-bit unsigned integer, big-endian
+
+// Concatenate the length buffer and the JSON buffer
+const binaryPayload = Buffer.concat([lengthBuffer, jsonBuffer]);
+
+// --- HTTP Request Options ---
+const options = {
+    hostname: HOST,
+    port: PORT,
+    path: PATH,
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': binaryPayload.length
+    },
+    rejectUnauthorized: false // Use with caution: Set to true in production if you have proper certificates
+};
+
+// --- Send the Request ---
+const req = https.request(options, (res) => {
+    console.log(`statusCode: ${res.statusCode}`);
+
+    let data = '';
+    res.on('data', (chunk) => {
+        data += chunk;
+    });
+
+    res.on('end', () => {
+        console.log('Response Body:', data);
+        if (res.statusCode === 200) {
+            console.log('Message sent successfully!');
+        } else {
+            console.error('Failed to send message.');
+        }
+    });
+});
+
+req.on('error', (error) => {
+    console.error('Request Error:', error);
+});
+
+// Write the binary payload to the request body
+req.write(binaryPayload);
+req.end();
+
+console.log('Sending message with payload:', messageData);

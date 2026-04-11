@@ -20,6 +20,7 @@ import {
   Copy,
   Loader2,
   Type,
+  MessageSquare,
 } from "lucide-react";
 
 interface CurrentUser {
@@ -262,6 +263,13 @@ function AdminDashboardInner() {
                         >
                           <Type className="h-4 w-4" />
                           Font Settings
+                        </button>
+                        <button
+                          onClick={() => { router.push("/admin/settings/messaging"); setShowProfileMenu(false); }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                          Messaging Settings
                         </button>
                       </>
                     )}

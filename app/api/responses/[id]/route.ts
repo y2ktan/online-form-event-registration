@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
 import { maskValue } from "@/lib/masking";
+import { fireAndForgetMessage, buildQrEditMessage } from "@/lib/messaging";
 
 interface GridItem {
   id: string;
@@ -282,6 +283,19 @@ export async function PUT(
         form: { select: { title: true } },
       },
     });
+
+    // Fire-and-forget: send WhatsApp QR + edit link notification on update
+    const updatedPhone = phoneNumber !== undefined ? sanitize(phoneNumber) : existing.phoneNumber;
+    if (updatedPhone) {
+      const origin = request.headers.get("origin") || request.headers.get("referer")?.replace(/\/[^/]*$/, "") || "";
+      const editLink = `${origin}/edit/${id}?token=${existing.editToken}`;
+      const waMessage = buildQrEditMessage(
+        updated?.form?.title || "Form",
+        existing.shortCode,
+        editLink,
+      );
+      fireAndForgetMessage(waMessage, [updatedPhone]);
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

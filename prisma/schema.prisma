@@ -166,6 +166,22 @@ model RegisteredUserData {
   updatedAt    DateTime @updatedAt
 }
 
+model MessagingConfig {
+  id              String   @id @default(uuid())
+  enabled         Boolean  @default(false)
+  provider        String   @default("TzuChiWABI") // provider label
+  apiBaseUrl      String   @default("")            // e.g. https://wabiwebhook.tzuchi.com.my
+  apiPort         Int      @default(441)
+  apiPath         String   @default("/api/sendMessage")
+  tokenId         String   @default("")            // secret – masked in UI
+  sender          String   @default("WhatsApp")    // WhatsApp | SmsModem | SmsGateway | Email
+  requestTimeout  Int      @default(10000)         // ms
+  maxRetries      Int      @default(3)
+  tlsVerify       Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
 model SmtpConfig {
   id        String   @id @default(uuid())
   host      String

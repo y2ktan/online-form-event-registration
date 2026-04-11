@@ -40,6 +40,8 @@ import {
   Palette,
   Download,
   BarChart2,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import {
   DndContext,
@@ -1240,9 +1242,18 @@ function FormBuilderPageInner() {
   const [insertMenu, setInsertMenu] = useState<{ key: string; sectionIndex: number; insertAtIndex: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile" | "summary">(
+  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile" | "summary" | "engagement">(
     searchParams.get("tab") === "responses" ? "responses" : "questions"
   );
+  const [messagingAction, setMessagingAction] = useState<{ loading: boolean; result: string; type: string }>({ loading: false, result: "", type: "" });
+  const [engagementMsg, setEngagementMsg] = useState("");
+  const [messagingEnabled, setMessagingEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/messaging").then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.enabled) setMessagingEnabled(true);
+    }).catch(() => {});
+  }, []);
   const [showPreview, setShowPreview] = useState(false);
   const [responses, setResponses] = useState<ResponseEntry[]>([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
@@ -1808,6 +1819,25 @@ function FormBuilderPageInner() {
     return `${window.location.origin}/edit/${responseId}?token=${editToken}`;
   }
 
+  async function sendMessagingAction(action: string, extra: Record<string, string> = {}) {
+    setMessagingAction({ loading: true, result: "", type: action });
+    try {
+      const res = await fetch(`/api/forms/${formId}/messaging`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      const data = await res.json();
+      setMessagingAction({
+        loading: false,
+        result: data.message || data.error || (data.success ? "Done" : "Failed"),
+        type: action,
+      });
+    } catch {
+      setMessagingAction({ loading: false, result: "Request failed.", type: action });
+    }
+  }
+
   async function openImportModal() {
     setShowImportModal(true);
     setImportSelectedFormId(null);
@@ -2219,6 +2249,19 @@ function FormBuilderPageInner() {
             <Import className="h-4 w-4" />
             User Profile
           </button>
+          {messagingEnabled && (
+            <button
+              onClick={() => setActiveTab("engagement")}
+              className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium ${
+                activeTab === "engagement"
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <MessageSquare className="h-4 w-4" />
+              Engagement
+            </button>
+          )}
         </div>
       </header>
 
@@ -2872,6 +2915,17 @@ function FormBuilderPageInner() {
                             <ClipboardCopy className="h-3.5 w-3.5" />
                             Copy Link
                           </button>
+                          {messagingEnabled && resp.phoneNumber && (
+                            <button
+                              onClick={() => sendMessagingAction("resend", { responseId: resp.id })}
+                              disabled={messagingAction.loading && messagingAction.type === "resend"}
+                              className="flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 sm:px-3 sm:text-sm"
+                              title="Resend QR code and edit link via WhatsApp"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              {messagingAction.loading && messagingAction.type === "resend" ? "Sending..." : "Resend"}
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDeleteResponse(resp.id)}
                             className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 sm:px-3 sm:text-sm"
@@ -3092,6 +3146,36 @@ function FormBuilderPageInner() {
                   </div>
                 </div>
 
+                {/* #4: Bulk reminder after user profile upload */}
+                {messagingEnabled && (
+                  <div className="flex flex-col gap-2 rounded-lg border border-green-200 bg-green-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-green-800 flex items-center gap-1.5">
+                        <MessageSquare className="h-4 w-4" />
+                        Send WhatsApp Reminder
+                      </p>
+                      <p className="text-xs text-green-600 mt-0.5">
+                        Remind all registered users to submit their response.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (confirm("Send a WhatsApp reminder to all registered users?")) {
+                          sendMessagingAction("bulkReminder");
+                        }
+                      }}
+                      disabled={messagingAction.loading}
+                      className="flex shrink-0 items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-500 disabled:opacity-50 sm:text-sm"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {messagingAction.loading && messagingAction.type === "bulkReminder" ? "Sending..." : "Send to All"}
+                    </button>
+                    {messagingAction.result && messagingAction.type === "bulkReminder" && (
+                      <p className="w-full rounded bg-white p-2 text-xs text-gray-700 sm:w-auto">{messagingAction.result}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* Lookup Column */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Lookup Column</label>
@@ -3236,11 +3320,178 @@ function FormBuilderPageInner() {
 
         {/* Summary tab */}
         {activeTab === "summary" && form && (
-          <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
-            <FormSummaryDashboard
-              formId={form.id}
-              onRefresh={fetchResponses}
-            />
+          <div className="space-y-4">
+            <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+              <FormSummaryDashboard
+                formId={form.id}
+                onRefresh={fetchResponses}
+              />
+            </div>
+            {/* #5: Reminder to non-submitters */}
+            {messagingEnabled && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                    <MessageSquare className="h-4 w-4" />
+                    Send Reminder to Non-Submitters
+                  </h3>
+                  <p className="mt-1 text-xs text-amber-600">
+                    Send a WhatsApp reminder to registered users who haven&apos;t submitted their response yet.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (confirm("Send a WhatsApp reminder to all registered users who haven't submitted yet?")) {
+                      sendMessagingAction("reminder");
+                    }
+                  }}
+                  disabled={messagingAction.loading}
+                  className="flex shrink-0 items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                  {messagingAction.loading && messagingAction.type === "reminder" ? "Sending..." : "Send Reminder"}
+                </button>
+              </div>
+              {messagingAction.result && messagingAction.type === "reminder" && (
+                <p className="mt-2 rounded-lg bg-white p-2 text-xs text-gray-700">{messagingAction.result}</p>
+              )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Engagement tab — #6: Custom messaging to submitted users */}
+        {activeTab === "engagement" && messagingEnabled && form && (
+          <div className="space-y-4">
+            {/* Custom message card */}
+            <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
+                <MessageSquare className="h-5 w-5 text-green-600" />
+                User Engagement
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Send custom WhatsApp messages to users who have submitted a response to this form.
+              </p>
+
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Message</label>
+                  <textarea
+                    value={engagementMsg}
+                    onChange={(e) => setEngagementMsg(e.target.value)}
+                    rows={4}
+                    maxLength={2000}
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder="Type your message here... This will be sent to all respondents with a phone number."
+                  />
+                  <p className="mt-1 text-right text-xs text-gray-400">{engagementMsg.length}/2000</p>
+                </div>
+
+                {/* Quick template chips */}
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-xs font-medium text-gray-500">Quick templates:</span>
+                  {[
+                    "Thank you for your submission! We will inform you of the next steps soon.",
+                    "Please arrive 30 minutes early for registration. Bring your QR code.",
+                    "Event reminder: Please check your submitted details and update if needed.",
+                  ].map((tpl, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setEngagementMsg(tpl)}
+                      className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-600 hover:bg-gray-100"
+                    >
+                      {tpl.slice(0, 40)}…
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t pt-4">
+                  <p className="text-xs text-gray-500">
+                    Message will be sent to all respondents who provided a phone number.
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (!engagementMsg.trim()) return;
+                      if (confirm(`Send this message to all respondents with a phone number?`)) {
+                        sendMessagingAction("custom", { message: engagementMsg });
+                      }
+                    }}
+                    disabled={messagingAction.loading || !engagementMsg.trim()}
+                    className="flex shrink-0 items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
+                  >
+                    <Send className="h-4 w-4" />
+                    {messagingAction.loading && messagingAction.type === "custom" ? "Sending..." : "Send Message"}
+                  </button>
+                </div>
+
+                {messagingAction.result && messagingAction.type === "custom" && (
+                  <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{messagingAction.result}</div>
+                )}
+              </div>
+            </div>
+
+            {/* Quick actions card */}
+            <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  onClick={() => {
+                    if (confirm("Send QR code + edit link to ALL respondents?")) {
+                      sendMessagingAction("bulkResend");
+                    }
+                  }}
+                  disabled={messagingAction.loading}
+                  className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
+                >
+                  <div className="rounded-full bg-indigo-100 p-2">
+                    <ClipboardCopy className="h-4 w-4 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Resend QR & Links</p>
+                    <p className="text-xs text-gray-500">Send QR code and edit link to all respondents</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm("Send reminder to all registered users who haven't submitted?")) {
+                      sendMessagingAction("reminder");
+                    }
+                  }}
+                  disabled={messagingAction.loading}
+                  className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
+                >
+                  <div className="rounded-full bg-amber-100 p-2">
+                    <Send className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Remind Non-Submitters</p>
+                    <p className="text-xs text-gray-500">Remind registered users who haven&apos;t submitted</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm("Send reminder to ALL registered users?")) {
+                      sendMessagingAction("bulkReminder");
+                    }
+                  }}
+                  disabled={messagingAction.loading}
+                  className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
+                >
+                  <div className="rounded-full bg-blue-100 p-2">
+                    <Users className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Remind All Users</p>
+                    <p className="text-xs text-gray-500">Send reminder to every registered user</p>
+                  </div>
+                </button>
+              </div>
+              {messagingAction.result && !["custom", "resend"].includes(messagingAction.type) && (
+                <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700">{messagingAction.result}</div>
+              )}
+            </div>
           </div>
         )}
       </div>

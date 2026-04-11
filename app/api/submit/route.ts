@@ -5,6 +5,7 @@ import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
 import { generateShortCode } from "@/lib/short-code";
 import { parseNotifyEmails, buildNotificationHtml } from "@/lib/notifications";
+import { fireAndForgetMessage, buildQrEditMessage } from "@/lib/messaging";
 
 interface GridItem {
   id: string;
@@ -357,6 +358,15 @@ export async function POST(request: NextRequest) {
           console.error("Notification email failed:", e);
         }
       })();
+    }
+
+    // Fire-and-forget: send WhatsApp QR + edit link to the respondent
+    const sanitizedPhone = form.collectPhone ? sanitize(phoneNumber) : null;
+    if (sanitizedPhone) {
+      const origin = request.headers.get("origin") || request.headers.get("referer")?.replace(/\/[^/]*$/, "") || "";
+      const editLink = `${origin}/edit/${response.id}?token=${response.editToken}`;
+      const waMessage = buildQrEditMessage(form.title, shortCode, editLink);
+      fireAndForgetMessage(waMessage, [sanitizedPhone]);
     }
 
     return NextResponse.json({
