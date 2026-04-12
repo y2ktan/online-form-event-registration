@@ -1249,9 +1249,9 @@ function FormBuilderPageInner() {
   const [engagementMsg, setEngagementMsg] = useState("");
   const [messagingEnabled, setMessagingEnabled] = useState(false);
   const [quickActionMsgs, setQuickActionMsgs] = useState({
-    bulkResend: "Your submission ID: {shortCode}\n\nView your QR code:\n{qrLink}\n\nEdit your response:\n{editLink}\n\nPlease keep this message for your reference.",
-    reminder: "You have not yet submitted your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
-    bulkReminder: "This is a reminder to submit your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
+    bulkResend: "✅ {formTitle}\n\nYour submission ID: {shortCode}\n\nView your QR code:\n{qrLink}\n\nEdit your response:\n{editLink}\n\nPlease keep this message for your reference.",
+    reminder: "📋 Reminder: {formTitle}\n\nYou have not yet submitted your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
+    bulkReminder: "📋 Reminder: {formTitle}\n\nThis is a reminder to submit your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
   });
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
 
@@ -3443,9 +3443,9 @@ function FormBuilderPageInner() {
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h3>
               <div className="space-y-3">
                 {[
-                  { key: "bulkResend" as const, label: "Resend QR & Links", desc: "Send QR code and edit link to all respondents", icon: <ClipboardCopy className="h-4 w-4 text-indigo-600" />, bg: "bg-indigo-100", confirm: "Send QR code + edit link to ALL respondents?", hint: "Placeholders: {shortCode}, {qrLink}, {editLink}" },
-                  { key: "reminder" as const, label: "Remind Non-Submitters", desc: "Remind registered users who haven't submitted", icon: <Send className="h-4 w-4 text-amber-600" />, bg: "bg-amber-100", confirm: "Send reminder to all registered users who haven't submitted?", hint: "Placeholders: {formLink}" },
-                  { key: "bulkReminder" as const, label: "Remind All Users", desc: "Send reminder to every registered user", icon: <Users className="h-4 w-4 text-blue-600" />, bg: "bg-blue-100", confirm: "Send reminder to ALL registered users?", hint: "Placeholders: {formLink}" },
+                  { key: "bulkResend" as const, label: "Resend QR & Links", desc: "Send QR code and edit link to all respondents", icon: <ClipboardCopy className="h-4 w-4 text-indigo-600" />, bg: "bg-indigo-100", confirm: "Send QR code + edit link to ALL respondents?", hint: "Placeholders: {formTitle}, {shortCode}, {qrLink}, {editLink}" },
+                  { key: "reminder" as const, label: "Remind Non-Submitters", desc: "Remind registered users who haven't submitted", icon: <Send className="h-4 w-4 text-amber-600" />, bg: "bg-amber-100", confirm: "Send reminder to all registered users who haven't submitted?", hint: "Placeholders: {formTitle}, {formLink}" },
+                  { key: "bulkReminder" as const, label: "Remind All Users", desc: "Send reminder to every registered user", icon: <Users className="h-4 w-4 text-blue-600" />, bg: "bg-blue-100", confirm: "Send reminder to ALL registered users?", hint: "Placeholders: {formTitle}, {formLink}" },
                 ].map((qa) => (
                   <div key={qa.key} className="rounded-lg border border-gray-200">
                     <div className="flex items-center gap-3 p-3">

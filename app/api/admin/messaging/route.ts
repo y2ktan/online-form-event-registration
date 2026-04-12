@@ -171,11 +171,33 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Fetch a form title to include in the test message
+    let formTitle = "Sample Form";
+    try {
+      const firstForm = await prisma.form.findFirst({ orderBy: { updatedAt: "desc" }, select: { title: true } });
+      if (firstForm?.title) formTitle = firstForm.title;
+    } catch { /* ignore */ }
+
+    const testContent = [
+      `✅ *${formTitle}*`,
+      ``,
+      `This is a test message from Form Builder.`,
+      `Your messaging configuration is working correctly.`,
+      ``,
+      `📱 View your QR code:`,
+      `https://example.com/f/ABC123`,
+      ``,
+      `✏️ Edit your response:`,
+      `https://example.com/edit/sample?token=xxx`,
+      ``,
+      `Please keep this message for your reference.`,
+    ].join("\n");
+
     // Build the binary-framed message matching TzuChi WABI protocol
     const messageData = {
       tokenId: config.tokenId,
       sender: config.sender,
-      message: { content: "Test message from Form Builder messaging configuration." },
+      message: { content: testContent },
       recipients: [testPhone],
     };
 
@@ -197,6 +219,17 @@ export async function PUT(request: NextRequest) {
       hostname = config.apiBaseUrl.replace(/^https?:\/\//, "").split("/")[0];
     }
 
+    console.log("[Messaging-Test] ── Test message START ──");
+    console.log("[Messaging-Test]   testPhone:", testPhone);
+    console.log("[Messaging-Test]   hostname:", hostname);
+    console.log("[Messaging-Test]   port:", config.apiPort);
+    console.log("[Messaging-Test]   path:", config.apiPath);
+    console.log("[Messaging-Test]   sender:", config.sender);
+    console.log("[Messaging-Test]   tlsVerify:", config.tlsVerify);
+    console.log("[Messaging-Test]   timeout:", config.requestTimeout);
+    console.log("[Messaging-Test]   payload length:", jsonBuffer.byteLength, "bytes");
+    console.log("[Messaging-Test]   payload JSON:", jsonString);
+
     const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
       const req = https.request(
         {
@@ -212,13 +245,26 @@ export async function PUT(request: NextRequest) {
           timeout: config.requestTimeout,
         },
         (res) => {
+          console.log("[Messaging-Test]   response statusCode:", res.statusCode);
+          console.log("[Messaging-Test]   response headers:", JSON.stringify(res.headers));
           let data = "";
           res.on("data", (chunk: Buffer) => (data += chunk));
-          res.on("end", () => resolve({ status: res.statusCode || 0, body: data }));
+          res.on("end", () => {
+            console.log("[Messaging-Test]   response body:", data);
+            console.log("[Messaging-Test] ── Test message END (status", res.statusCode, ") ──");
+            resolve({ status: res.statusCode || 0, body: data });
+          });
         }
       );
-      req.on("error", reject);
+      req.on("error", (err) => {
+        console.error("[Messaging-Test]   request error:", err.message);
+        console.error("[Messaging-Test]   error code:", (err as NodeJS.ErrnoException).code);
+        console.log("[Messaging-Test] ── Test message END (error) ──");
+        reject(err);
+      });
       req.on("timeout", () => {
+        console.error("[Messaging-Test]   request timed out after", config.requestTimeout, "ms");
+        console.log("[Messaging-Test] ── Test message END (timeout) ──");
         req.destroy();
         reject(new Error("Request timed out"));
       });
@@ -244,6 +290,10 @@ export async function PUT(request: NextRequest) {
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("[Messaging-Test]   catch error:", msg);
+    if (err instanceof Error && err.stack) {
+      console.error("[Messaging-Test]   stack:", err.stack);
+    }
     return NextResponse.json({ error: `Connection test failed: ${msg}` }, { status: 502 });
   }
 }

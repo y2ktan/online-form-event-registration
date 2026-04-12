@@ -109,7 +109,7 @@ export async function POST(
           const editLink = `${origin}/edit/${r.id}?token=${r.editToken}`;
           const qrLink = form.shortCode ? `${origin}/f/${form.shortCode}` : `${origin}/form/${formId}`;
           const content = customTpl
-            ? `\u2705 *${form.title}*\n\n${customTpl.replace(/\{shortCode\}/g, r.shortCode).replace(/\{editLink\}/g, editLink).replace(/\{qrLink\}/g, qrLink)}`
+            ? customTpl.replace(/\{formTitle\}/g, form.title).replace(/\{shortCode\}/g, r.shortCode).replace(/\{editLink\}/g, editLink).replace(/\{qrLink\}/g, qrLink)
             : buildQrEditMessage(form.title, r.shortCode, editLink);
           return sendMessage(config, content, [r.phoneNumber!]);
         }),
@@ -139,7 +139,7 @@ export async function POST(
       : `${origin}/form/${formId}`;
     const customTpl = typeof body.message === "string" ? body.message.trim() : "";
     const content = customTpl
-      ? `\uD83D\uDCCB *Reminder: ${form.title}*\n\n${customTpl.replace(/\{formLink\}/g, formLink)}`
+      ? customTpl.replace(/\{formTitle\}/g, form.title).replace(/\{formLink\}/g, formLink)
       : buildReminderMessage(form.title, formLink);
     const result = await sendBulk(config, content, phones);
 
@@ -162,7 +162,7 @@ export async function POST(
       : `${origin}/form/${formId}`;
     const customTpl = typeof body.message === "string" ? body.message.trim() : "";
     const content = customTpl
-      ? `\uD83D\uDCCB *Reminder: ${form.title}*\n\n${customTpl.replace(/\{formLink\}/g, formLink)}`
+      ? customTpl.replace(/\{formTitle\}/g, form.title).replace(/\{formLink\}/g, formLink)
       : buildReminderMessage(form.title, formLink);
     const result = await sendBulk(config, content, phones);
 

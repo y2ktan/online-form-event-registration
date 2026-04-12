@@ -83,6 +83,17 @@ export async function sendMessage(
     hostname = config.apiBaseUrl.replace(/^https?:\/\//, "").split("/")[0];
   }
 
+  console.log("[Messaging] ── sendMessage START ──");
+  console.log("[Messaging]   hostname:", hostname);
+  console.log("[Messaging]   port:", config.apiPort);
+  console.log("[Messaging]   path:", config.apiPath);
+  console.log("[Messaging]   sender:", config.sender);
+  console.log("[Messaging]   recipients:", recipients);
+  console.log("[Messaging]   tlsVerify:", config.tlsVerify);
+  console.log("[Messaging]   timeout:", config.requestTimeout);
+  console.log("[Messaging]   payload length:", jsonBuffer.byteLength, "bytes");
+  console.log("[Messaging]   payload JSON:", jsonString);
+
   return new Promise<SendResult>((resolve) => {
     const req = https.request(
       {
@@ -98,9 +109,13 @@ export async function sendMessage(
         timeout: config.requestTimeout,
       },
       (res) => {
+        console.log("[Messaging]   response statusCode:", res.statusCode);
+        console.log("[Messaging]   response headers:", JSON.stringify(res.headers));
         let data = "";
         res.on("data", (chunk: Buffer) => (data += chunk));
         res.on("end", () => {
+          console.log("[Messaging]   response body:", data);
+          console.log("[Messaging] ── sendMessage END (status", res.statusCode, ") ──");
           resolve({
             success: res.statusCode === 200,
             status: res.statusCode ?? 0,
@@ -109,10 +124,15 @@ export async function sendMessage(
         });
       },
     );
-    req.on("error", (err) =>
-      resolve({ success: false, error: err.message }),
-    );
+    req.on("error", (err) => {
+      console.error("[Messaging]   request error:", err.message);
+      console.error("[Messaging]   error code:", (err as NodeJS.ErrnoException).code);
+      console.log("[Messaging] ── sendMessage END (error) ──");
+      resolve({ success: false, error: err.message });
+    });
     req.on("timeout", () => {
+      console.error("[Messaging]   request timed out after", config.requestTimeout, "ms");
+      console.log("[Messaging] ── sendMessage END (timeout) ──");
       req.destroy();
       resolve({ success: false, error: "Request timed out" });
     });
