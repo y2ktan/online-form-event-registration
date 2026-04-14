@@ -151,7 +151,7 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const config = await prisma.messagingConfig.findFirst({
+    let config = await prisma.messagingConfig.findFirst({
       orderBy: { updatedAt: "desc" },
     });
 
@@ -164,6 +164,17 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const testPhone = sanitize(body.testPhone || "").trim();
+
+    // Allow request body to override saved config for testing unsaved changes
+    if (body.apiBaseUrl) config = {
+      ...config,
+      apiBaseUrl: sanitize(body.apiBaseUrl).trim() || config.apiBaseUrl,
+      apiPort: parseInt(body.apiPort) || config.apiPort,
+      apiPath: sanitize(body.apiPath || "").trim() || config.apiPath,
+      sender: sanitize(body.sender || "").trim() || config.sender,
+      tlsVerify: body.tlsVerify !== undefined ? body.tlsVerify !== false : config.tlsVerify,
+      requestTimeout: body.requestTimeout ? Math.max(1000, Math.min(parseInt(body.requestTimeout) || 10000, 60000)) : config.requestTimeout,
+    };
     if (!testPhone) {
       return NextResponse.json(
         { error: "A test phone number is required." },
@@ -209,21 +220,24 @@ export async function PUT(request: NextRequest) {
 
     const https = await import("https");
 
-    // Parse the base URL to extract hostname
+    // Parse the base URL to extract hostname and base path
     let hostname = config.apiBaseUrl;
+    let basePath = "";
     try {
       const parsed = new URL(config.apiBaseUrl);
       hostname = parsed.hostname;
+      basePath = parsed.pathname.replace(/\/$/, ""); // strip trailing slash
     } catch {
       // If not a valid URL, treat as hostname directly
       hostname = config.apiBaseUrl.replace(/^https?:\/\//, "").split("/")[0];
     }
+    const fullPath = basePath + config.apiPath;
 
     console.log("[Messaging-Test] ── Test message START ──");
     console.log("[Messaging-Test]   testPhone:", testPhone);
     console.log("[Messaging-Test]   hostname:", hostname);
     console.log("[Messaging-Test]   port:", config.apiPort);
-    console.log("[Messaging-Test]   path:", config.apiPath);
+    console.log("[Messaging-Test]   path:", fullPath);
     console.log("[Messaging-Test]   sender:", config.sender);
     console.log("[Messaging-Test]   tlsVerify:", config.tlsVerify);
     console.log("[Messaging-Test]   timeout:", config.requestTimeout);
@@ -235,7 +249,7 @@ export async function PUT(request: NextRequest) {
         {
           hostname,
           port: config.apiPort,
-          path: config.apiPath,
+          path: fullPath,
           method: "POST",
           headers: {
             "Content-Type": "application/octet-stream",

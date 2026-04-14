@@ -120,7 +120,7 @@ export default function MessagingSettingsPage() {
       const res = await fetch("/api/admin/messaging", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ testPhone: testPhone.trim() }),
+        body: JSON.stringify({ testPhone: testPhone.trim(), ...form }),
       });
       const data = await res.json();
       if (!res.ok) {

@@ -76,17 +76,20 @@ export async function sendMessage(
   const binaryPayload = Buffer.concat([lengthBuffer, jsonBuffer]);
 
   let hostname: string;
+  let basePath = "";
   try {
     const parsed = new URL(config.apiBaseUrl);
     hostname = parsed.hostname;
+    basePath = parsed.pathname.replace(/\/$/, ""); // strip trailing slash
   } catch {
     hostname = config.apiBaseUrl.replace(/^https?:\/\//, "").split("/")[0];
   }
+  const fullPath = basePath + config.apiPath;
 
   console.log("[Messaging] ── sendMessage START ──");
   console.log("[Messaging]   hostname:", hostname);
   console.log("[Messaging]   port:", config.apiPort);
-  console.log("[Messaging]   path:", config.apiPath);
+  console.log("[Messaging]   path:", fullPath);
   console.log("[Messaging]   sender:", config.sender);
   console.log("[Messaging]   recipients:", recipients);
   console.log("[Messaging]   tlsVerify:", config.tlsVerify);
@@ -99,7 +102,7 @@ export async function sendMessage(
       {
         hostname,
         port: config.apiPort,
-        path: config.apiPath,
+        path: fullPath,
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
