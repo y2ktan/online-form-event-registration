@@ -74,6 +74,8 @@ docker run -d \
   -e JWT_SECRET="your-jwt-secret" \
   -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
   -e NEXTAUTH_URL="https://yourdomain.com" \
+  -e GOOGLE_SHEETS_ENCRYPTION_KEY="your-encryption-key" \
+  -e CRON_SECRET="your-cron-secret" \
   -v ai-form-registration_db:/app/data \
   -v ai-form-registration_uploads:/app/public/uploads \
   -v ai-form-registration_fonts:/app/public/fonts \
@@ -107,6 +109,8 @@ docker run -d \
   -e JWT_SECRET="your-jwt-secret" \
   -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
   -e NEXTAUTH_URL="https://yourdomain.com" \
+  -e GOOGLE_SHEETS_ENCRYPTION_KEY="your-encryption-key" \
+  -e CRON_SECRET="your-cron-secret" \
   -v ai-form-registration_db:/app/data \
   -v ai-form-registration_uploads:/app/public/uploads \
   -v ai-form-registration_fonts:/app/public/fonts \

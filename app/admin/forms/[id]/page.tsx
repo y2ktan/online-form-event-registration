@@ -42,6 +42,7 @@ import {
   BarChart2,
   MessageSquare,
   Send,
+  Sheet,
 } from "lucide-react";
 import {
   DndContext,
@@ -1242,7 +1243,7 @@ function FormBuilderPageInner() {
   const [insertMenu, setInsertMenu] = useState<{ key: string; sectionIndex: number; insertAtIndex: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile" | "summary" | "engagement">(
+  const [activeTab, setActiveTab] = useState<"questions" | "responses" | "collaborators" | "userProfile" | "summary" | "engagement" | "googleSheets">(
     searchParams.get("tab") === "responses" ? "responses" : "questions"
   );
   const [messagingAction, setMessagingAction] = useState<{ loading: boolean; result: string; type: string }>({ loading: false, result: "", type: "" });
@@ -1254,6 +1255,34 @@ function FormBuilderPageInner() {
     bulkReminder: "📋 Reminder: {formTitle}\n\nThis is a reminder to submit your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
   });
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
+
+  // Google Sheets sync state
+  const [gsConfig, setGsConfig] = useState<{
+    globalEnabled: boolean;
+    enabled: boolean;
+    spreadsheetId: string;
+    sheetName: string;
+    lastSyncedAt: string | null;
+    pendingSyncAt: string | null;
+    lastError: string | null;
+    failureCount: number;
+    rowsSynced: number;
+  }>({ globalEnabled: false, enabled: false, spreadsheetId: "", sheetName: "Sheet1", lastSyncedAt: null, pendingSyncAt: null, lastError: null, failureCount: 0, rowsSynced: 0 });
+  const [gsLoading, setGsLoading] = useState(false);
+  const [gsSaving, setGsSaving] = useState(false);
+  const [gsAction, setGsAction] = useState<{ loading: boolean; result: string; error: boolean }>({ loading: false, result: "", error: false });
+
+  const fetchGsConfig = useCallback(async () => {
+    if (!formId) return;
+    setGsLoading(true);
+    try {
+      const res = await fetch(`/api/forms/${formId}/google-sheets`);
+      if (res.ok) {
+        const data = await res.json();
+        setGsConfig(data);
+      }
+    } catch {} finally { setGsLoading(false); }
+  }, [formId]);
 
   useEffect(() => {
     fetch("/api/admin/messaging").then(r => r.ok ? r.json() : null).then(d => {
@@ -2268,6 +2297,17 @@ function FormBuilderPageInner() {
               Engagement
             </button>
           )}
+          <button
+            onClick={() => { setActiveTab("googleSheets"); fetchGsConfig(); }}
+            className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium ${
+              activeTab === "googleSheets"
+                ? "border-green-600 text-green-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <Sheet className="h-4 w-4" />
+            Sheets
+          </button>
         </div>
       </header>
 
@@ -3489,6 +3529,194 @@ function FormBuilderPageInner() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Google Sheets Sync tab */}
+        {activeTab === "googleSheets" && (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-white p-4 shadow-sm sm:p-6">
+              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
+                <Sheet className="h-5 w-5 text-green-600" />
+                Google Sheets Sync
+              </h2>
+
+              {!gsConfig.globalEnabled && (
+                <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
+                  Google Sheets is not configured globally. Ask an admin to set it up in Admin → Google Sheets Sync.
+                </div>
+              )}
+
+              {gsLoading ? (
+                <div className="flex items-center justify-center py-8 text-gray-400">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : (
+                <div className="mt-5 space-y-5">
+                  {gsAction.result && (
+                    <div className={`rounded-lg p-3 text-sm ${gsAction.error ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>
+                      {gsAction.result}
+                    </div>
+                  )}
+
+                  {/* Enable toggle */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={gsConfig.enabled}
+                      onClick={() => setGsConfig({ ...gsConfig, enabled: !gsConfig.enabled })}
+                      disabled={!gsConfig.globalEnabled}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        gsConfig.enabled ? "bg-green-500" : "bg-gray-200"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          gsConfig.enabled ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                    <label className="text-sm font-medium text-gray-700">
+                      Enable sync for this form
+                    </label>
+                  </div>
+
+                  {/* Spreadsheet ID */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Spreadsheet ID *</label>
+                    <input
+                      type="text"
+                      value={gsConfig.spreadsheetId}
+                      onChange={(e) => setGsConfig({ ...gsConfig, spreadsheetId: e.target.value })}
+                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+                    />
+                    <p className="mt-1 text-xs text-gray-400">
+                      Found in the spreadsheet URL: docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit
+                    </p>
+                  </div>
+
+                  {/* Sheet Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Sheet Name</label>
+                    <input
+                      type="text"
+                      value={gsConfig.sheetName}
+                      onChange={(e) => setGsConfig({ ...gsConfig, sheetName: e.target.value })}
+                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      placeholder="Sheet1"
+                    />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row">
+                    <button
+                      onClick={async () => {
+                        setGsSaving(true);
+                        setGsAction({ loading: false, result: "", error: false });
+                        try {
+                          const res = await fetch(`/api/forms/${formId}/google-sheets`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              enabled: gsConfig.enabled,
+                              spreadsheetId: gsConfig.spreadsheetId,
+                              sheetName: gsConfig.sheetName,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) {
+                            setGsAction({ loading: false, result: data.error || "Save failed.", error: true });
+                          } else {
+                            setGsAction({ loading: false, result: "Configuration saved.", error: false });
+                            fetchGsConfig();
+                          }
+                        } catch { setGsAction({ loading: false, result: "Save failed.", error: true }); }
+                        finally { setGsSaving(false); }
+                      }}
+                      disabled={gsSaving || !gsConfig.globalEnabled}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      {gsSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</> : <><Check className="h-4 w-4" /> Save</>}
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        setGsAction({ loading: true, result: "", error: false });
+                        try {
+                          const res = await fetch(`/api/forms/${formId}/google-sheets`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ action: "test", spreadsheetId: gsConfig.spreadsheetId }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) {
+                            setGsAction({ loading: false, result: data.error || "Test failed.", error: true });
+                          } else {
+                            setGsAction({ loading: false, result: data.message, error: false });
+                          }
+                        } catch { setGsAction({ loading: false, result: "Test failed.", error: true }); }
+                      }}
+                      disabled={gsAction.loading || !gsConfig.spreadsheetId || !gsConfig.globalEnabled}
+                      className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {gsAction.loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Testing...</> : "Test Access"}
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        if (!confirm("This will overwrite the entire sheet with current data. Continue?")) return;
+                        setGsAction({ loading: true, result: "", error: false });
+                        try {
+                          const res = await fetch(`/api/forms/${formId}/google-sheets`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ action: "sync" }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) {
+                            setGsAction({ loading: false, result: data.error || "Sync failed.", error: true });
+                          } else {
+                            setGsAction({ loading: false, result: data.message, error: false });
+                            fetchGsConfig();
+                          }
+                        } catch { setGsAction({ loading: false, result: "Sync failed.", error: true }); }
+                      }}
+                      disabled={gsAction.loading || !gsConfig.enabled || !gsConfig.globalEnabled}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
+                    >
+                      {gsAction.loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Syncing...</> : "Sync Now"}
+                    </button>
+                  </div>
+
+                  {/* Status card */}
+                  {gsConfig.lastSyncedAt && (
+                    <div className="rounded-lg border border-gray-200 p-4 space-y-2">
+                      <h3 className="text-sm font-semibold text-gray-900">Sync Status</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="text-gray-500">Last synced</div>
+                        <div className="text-gray-900">{new Date(gsConfig.lastSyncedAt).toLocaleString()}</div>
+                        <div className="text-gray-500">Rows synced</div>
+                        <div className="text-gray-900">{gsConfig.rowsSynced}</div>
+                        {gsConfig.failureCount > 0 && (
+                          <>
+                            <div className="text-gray-500">Failures</div>
+                            <div className="text-red-600">{gsConfig.failureCount}{gsConfig.failureCount >= 5 ? " (paused — circuit breaker)" : ""}</div>
+                          </>
+                        )}
+                        {gsConfig.lastError && (
+                          <>
+                            <div className="text-gray-500">Last error</div>
+                            <div className="text-red-600 break-all">{gsConfig.lastError}</div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

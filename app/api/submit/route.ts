@@ -6,6 +6,7 @@ import { isGridType } from "@/lib/question-types";
 import { generateShortCode } from "@/lib/short-code";
 import { parseNotifyEmails, buildNotificationHtml } from "@/lib/notifications";
 import { fireAndForgetMessage, buildQrEditMessage } from "@/lib/messaging";
+import { markFormDirty } from "@/lib/google-sheets";
 
 interface GridItem {
   id: string;
@@ -368,6 +369,9 @@ export async function POST(request: NextRequest) {
       const waMessage = buildQrEditMessage(form.title, shortCode, editLink);
       fireAndForgetMessage(waMessage, [sanitizedPhone]);
     }
+
+    // Fire-and-forget: mark form dirty for Google Sheets sync
+    markFormDirty(form.id).catch(() => {});
 
     return NextResponse.json({
       success: true,

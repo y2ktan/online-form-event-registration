@@ -6,6 +6,7 @@ import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
 import { maskValue } from "@/lib/masking";
 import { fireAndForgetMessage, buildQrEditMessage } from "@/lib/messaging";
+import { markFormDirty } from "@/lib/google-sheets";
 
 interface GridItem {
   id: string;
@@ -115,7 +116,8 @@ export async function DELETE(
   }
 
   try {
-    await prisma.response.delete({ where: { id } });
+    const deleted = await prisma.response.delete({ where: { id }, select: { formId: true } });
+    markFormDirty(deleted.formId).catch(() => {});
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json(
@@ -296,6 +298,9 @@ export async function PUT(
       );
       fireAndForgetMessage(waMessage, [updatedPhone]);
     }
+
+    // Fire-and-forget: mark form dirty for Google Sheets sync
+    markFormDirty(existing.formId).catch(() => {});
 
     return NextResponse.json(updated);
   } catch (error) {

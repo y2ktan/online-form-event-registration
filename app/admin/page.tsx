@@ -21,6 +21,7 @@ import {
   Loader2,
   Type,
   MessageSquare,
+  Sheet,
 } from "lucide-react";
 
 interface CurrentUser {
@@ -270,6 +271,13 @@ function AdminDashboardInner() {
                         >
                           <MessageSquare className="h-4 w-4" />
                           Messaging Settings
+                        </button>
+                        <button
+                          onClick={() => { router.push("/admin/settings/google-sheets"); setShowProfileMenu(false); }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <Sheet className="h-4 w-4" />
+                          Google Sheets Sync
                         </button>
                       </>
                     )}

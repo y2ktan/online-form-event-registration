@@ -47,6 +47,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 # ENV NEXT_TELEMETRY_DISABLED=1
 
+# Google Sheets sync (set at runtime via docker run -e)
+# GOOGLE_SHEETS_ENCRYPTION_KEY — AES key for encrypting service account credentials
+# CRON_SECRET — secret token to protect /api/cron/google-sheets-sync endpoint
+
 RUN groupadd --system --gid 1001 nodejs
 RUN useradd --system --uid 1001 --gid nodejs -m nextjs
 
@@ -56,6 +60,10 @@ COPY --from=builder /app/public ./public
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# googleapis uses dynamic imports that standalone tracing may miss — copy explicitly
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/googleapis ./node_modules/googleapis
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/googleapis-common ./node_modules/googleapis-common
 
 # Create data, uploads, and fonts directories with correct permissions
 RUN mkdir -p /app/data /app/public/uploads /app/public/fonts && chown -R nextjs:nodejs /app/data /app/public/uploads /app/public/fonts
