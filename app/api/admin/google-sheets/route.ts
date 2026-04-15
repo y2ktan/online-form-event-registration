@@ -168,16 +168,11 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Just validate the credential works by listing scopes
-    try {
-      const parsed = JSON.parse(keyJson);
-      return NextResponse.json({
-        success: true,
-        message: `Credential valid for ${parsed.client_email}.`,
-      });
-    } catch {
-      return NextResponse.json({ error: "Credential is invalid." }, { status: 400 });
-    }
+    // Credential is valid — return the stored service account email directly
+    return NextResponse.json({
+      success: true,
+      message: `Credential valid for ${cred.serviceAccountEmail}.`,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: `Test failed: ${msg}` }, { status: 502 });

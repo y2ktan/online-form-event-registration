@@ -3,7 +3,7 @@
  *
  * getGoogleSheetsClient  — authenticated Sheets v4 client from stored credential
  * getGoogleCredential    — fetch + decrypt global credential
- * buildSheetRows         — paginated response→row builder matching CSV export format
+ * buildHeaderRow         — column header builder matching CSV export format
  * syncFormToSheet        — full overwrite: clear + write header + chunked data
  * testSheetAccess        — read-only validation (spreadsheets.get metadata)
  * markFormDirty          — set pendingSyncAt + increment syncVersion
@@ -11,7 +11,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { google, sheets_v4 } from "googleapis";
-import { encryptKey, decryptKey } from "@/lib/google-sheets-crypto";
+import { decryptKey } from "@/lib/google-sheets-crypto";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -41,6 +41,15 @@ export async function getGoogleCredential(): Promise<GoogleCredentialConfig | nu
   }
 }
 
+/** Build a Sheets v4 client from a service account email + private key. */
+function buildSheetsClient(clientEmail: string, privateKey: string): sheets_v4.Sheets {
+  const auth = new google.auth.GoogleAuth({
+    credentials: { client_email: clientEmail, private_key: privateKey },
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  return google.sheets({ version: "v4", auth });
+}
+
 /** Create an authenticated Google Sheets v4 client from the stored credential. */
 export async function getGoogleSheetsClient(): Promise<sheets_v4.Sheets | null> {
   const cred = await getGoogleCredential();
@@ -48,14 +57,7 @@ export async function getGoogleSheetsClient(): Promise<sheets_v4.Sheets | null> 
 
   try {
     const keyJson = JSON.parse(decryptKey(cred.serviceAccountKey));
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: keyJson.client_email,
-        private_key: keyJson.private_key,
-      },
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-    return google.sheets({ version: "v4", auth });
+    return buildSheetsClient(keyJson.client_email, keyJson.private_key);
   } catch (err) {
     console.error("[GoogleSheets] Failed to create client:", err);
     return null;
@@ -65,14 +67,7 @@ export async function getGoogleSheetsClient(): Promise<sheets_v4.Sheets | null> 
 /** Create a Sheets client from a raw (unencrypted) JSON key string — for test validation. */
 export function getSheetsClientFromKey(keyJsonStr: string): sheets_v4.Sheets {
   const keyJson = JSON.parse(keyJsonStr);
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: keyJson.client_email,
-      private_key: keyJson.private_key,
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  return google.sheets({ version: "v4", auth });
+  return buildSheetsClient(keyJson.client_email, keyJson.private_key);
 }
 
 // ─── Read-only Test ─────────────────────────────────────────────────────────

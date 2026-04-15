@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { getGoogleCredential, getSheetsClientFromKey, testSheetAccess, syncFormToSheet, markFormDirty } from "@/lib/google-sheets";
+import { getGoogleCredential, getSheetsClientFromKey, testSheetAccess, syncFormToSheet } from "@/lib/google-sheets";
 import { decryptKey } from "@/lib/google-sheets-crypto";
 
 async function canEditForm(formId: string, session: { userId: string; role: string }) {
