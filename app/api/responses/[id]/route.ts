@@ -210,7 +210,21 @@ export async function PUT(
               if (!answer || answerValue === "{}" || answerValue === "[]") {
                 return NextResponse.json({ error: `"${question.label}" is required.` }, { status: 400 });
               }
+            } else if (question.type === "CHECKBOX_GRID") {
+              // For Checkbox Grid, at least one selection anywhere in the grid is sufficient
+              let hasAnySelection = false;
+              for (const row of rows) {
+                const rowAnswer = gridAnswers[row.id];
+                if (Array.isArray(rowAnswer) && rowAnswer.length > 0) {
+                  hasAnySelection = true;
+                  break;
+                }
+              }
+              if (!hasAnySelection) {
+                return NextResponse.json({ error: `"${question.label}" is required.` }, { status: 400 });
+              }
             } else {
+              // For Multiple Choice Grid, every row requires a selection
               for (const row of rows) {
                 const rowAnswer = gridAnswers[row.id];
                 if (!rowAnswer || (Array.isArray(rowAnswer) && rowAnswer.length === 0)) {
