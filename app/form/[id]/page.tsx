@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import { 
@@ -11,7 +11,9 @@ import {
   Check, 
   Phone, 
   Camera, 
-  X 
+  X,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { isGridType } from "@/lib/question-types";
 import { QRCodeSVG } from "qrcode.react";
@@ -127,6 +129,37 @@ export default function PublicFormPage() {
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [completedSections, setCompletedSections] = useState<Set<number>>(new Set());
+  const tabScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false);
+  const [canScrollTabsRight, setCanScrollTabsRight] = useState(false);
+
+  useEffect(() => {
+    const el = tabScrollRef.current;
+    if (!el) return;
+    const update = () => {
+      setCanScrollTabsLeft(el.scrollLeft > 2);
+      setCanScrollTabsRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    const wheelHandler = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+    el.addEventListener("wheel", wheelHandler, { passive: false });
+    return () => { el.removeEventListener("scroll", update); el.removeEventListener("wheel", wheelHandler); ro.disconnect(); };
+  }, []);
+
+  useEffect(() => {
+    const active = tabScrollRef.current?.querySelector('[data-active-tab="true"]') as HTMLElement | null;
+    active?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [currentSectionIndex]);
+
+  const scrollTabs = (dir: "left" | "right") => tabScrollRef.current?.scrollBy({ left: dir === "left" ? -150 : 150, behavior: "smooth" });
 
   // Routing-graph walk: which sections are reachable given current answers
   const reachableSectionIndices = useMemo(() => {
@@ -969,7 +1002,9 @@ export default function PublicFormPage() {
           {isMultiSection && (
             <>
               {/* Section navigation tabs */}
-              <div className="mt-3 -mx-1 overflow-x-auto scrollbar-hide">
+              <div className="mt-3 -mx-1 relative flex items-center gap-1">
+                <button type="button" onClick={() => scrollTabs("left")} className="flex-shrink-0 p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-opacity" style={{ opacity: canScrollTabsLeft ? 1 : 0, pointerEvents: canScrollTabsLeft ? "auto" : "none" }}><ChevronLeft className="h-4 w-4" /></button>
+                <div ref={tabScrollRef} className="overflow-x-auto scrollbar-hide flex-1">
                 <div className="flex gap-1 px-1 min-w-0">
                   {form.sections.map((section, idx) => {
                     if (!reachableSectionIndices.has(idx)) return null;
@@ -985,6 +1020,7 @@ export default function PublicFormPage() {
                         key={section.id}
                         type="button"
                         disabled={isLocked}
+                        data-active-tab={isCurrent ? "true" : undefined}
                         onClick={() => navigateToSection(idx)}
                         className={`flex-shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all whitespace-nowrap ${
                           isCurrent
@@ -1016,6 +1052,8 @@ export default function PublicFormPage() {
                     );
                   })}
                 </div>
+                </div>
+                <button type="button" onClick={() => scrollTabs("right")} className="flex-shrink-0 p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-opacity" style={{ opacity: canScrollTabsRight ? 1 : 0, pointerEvents: canScrollTabsRight ? "auto" : "none" }}><ChevronRight className="h-4 w-4" /></button>
               </div>
             </>
           )}
