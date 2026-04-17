@@ -725,6 +725,7 @@ function EditResponseForm() {
     );
 
     if (result.type === "SUBMIT") {
+      if (!validateCurrentSection()) return;
       handleFinalSubmit();
     } else {
       const nextIdx = result.sectionIndex ?? currentSectionIndex + 1;
@@ -762,7 +763,7 @@ function EditResponseForm() {
   }
 
   async function submitForm(latestAnswers?: Record<string, string>) {
-    if (!data) return;
+    if (!data || submitting) return;
     setSubmitting(true);
     setError("");
     const mergedAnswers = latestAnswers ?? answers;

@@ -517,6 +517,7 @@ export default function AdminEditResponsePage() {
     );
 
     if (result.type === "SUBMIT") {
+      if (!validateCurrentSection()) return;
       handleFinalSubmit(updatedAnswers);
     } else {
       const nextIdx = result.sectionIndex ?? sectionIndex + 1;
@@ -723,7 +724,7 @@ export default function AdminEditResponsePage() {
   }
 
   async function submitForm(latestAnswers?: Record<string, string>) {
-    if (!data) return;
+    if (!data || submitting) return;
     setSubmitting(true);
     setError("");
     const mergedAnswers = latestAnswers ?? answers;
