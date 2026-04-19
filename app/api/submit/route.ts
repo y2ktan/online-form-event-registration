@@ -5,7 +5,7 @@ import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
 import { generateShortCode } from "@/lib/short-code";
 import { parseNotifyEmails, buildNotificationHtml } from "@/lib/notifications";
-import { fireAndForgetMessage, buildQrEditMessage } from "@/lib/messaging";
+import { fireAndForgetConfirmation } from "@/lib/messaging";
 import { markFormDirty } from "@/lib/google-sheets";
 
 interface GridItem {
@@ -361,13 +361,18 @@ export async function POST(request: NextRequest) {
       })();
     }
 
-    // Fire-and-forget: send WhatsApp QR + edit link to the respondent
+    // Fire-and-forget: send WhatsApp confirmation to the respondent
     const sanitizedPhone = form.collectPhone ? sanitize(phoneNumber) : null;
     if (sanitizedPhone) {
       const origin = request.headers.get("origin") || request.headers.get("referer")?.replace(/\/[^/]*$/, "") || "";
-      const editLink = `${origin}/edit/${response.id}?token=${response.editToken}`;
-      const waMessage = buildQrEditMessage(form.title, shortCode, editLink);
-      fireAndForgetMessage(waMessage, [sanitizedPhone]);
+      const confirmationUrl = form.shortCode ? `${origin}/f/${form.shortCode}` : `${origin}/form/${form.id}`;
+      fireAndForgetConfirmation(
+        [{ to: sanitizedPhone, name: shortCode }],
+        form.templateNumber,
+        confirmationUrl,
+        form.headerMediaId,
+        [form.title],
+      );
     }
 
     // Fire-and-forget: mark form dirty for Google Sheets sync

@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { sanitize } from "@/lib/sanitize";
 import {
   getMessagingConfig,
-  sendMessage,
-  sendBulk,
-  buildQrEditMessage,
-  buildReminderMessage,
-  buildCustomMessage,
+  sendConfirmation,
 } from "@/lib/messaging";
 
 /**
@@ -38,9 +33,9 @@ export async function POST(
   }
 
   const config = await getMessagingConfig();
-  if (!config) {
+  if (!config || !config.waApiEnabled || !config.waApiBearerToken) {
     return NextResponse.json(
-      { error: "Messaging is not configured or disabled. Go to Admin → Messaging Settings." },
+      { error: "TC_WA REST API is not configured or disabled. Go to Admin → Messaging Settings." },
       { status: 400 },
     );
   }
@@ -54,7 +49,7 @@ export async function POST(
 
   const form = await prisma.form.findUnique({
     where: { id: formId },
-    select: { id: true, title: true, shortCode: true },
+    select: { id: true, title: true, shortCode: true, templateNumber: true, headerMediaId: true },
   });
   if (!form) {
     return NextResponse.json({ error: "Form not found." }, { status: 404 });
@@ -78,52 +73,56 @@ export async function POST(
       return NextResponse.json({ error: "Response has no phone number." }, { status: 400 });
     }
 
-    const editLink = `${origin}/edit/${resp.id}?token=${resp.editToken}`;
-    const content = buildQrEditMessage(form.title, resp.shortCode, editLink);
-    const result = await sendMessage(config, content, [resp.phoneNumber]);
+    const confirmationUrl = form.shortCode
+      ? `${origin}/f/${form.shortCode}`
+      : `${origin}/form/${formId}`;
+    const result = await sendConfirmation(
+      config,
+      [{ to: resp.phoneNumber, name: resp.shortCode }],
+      form.templateNumber,
+      confirmationUrl,
+      form.headerMediaId,
+      [form.title],
+    );
 
     return NextResponse.json({
       success: result.success,
-      message: result.success ? "Message sent." : `Send failed: ${result.error || result.body}`,
+      message: result.success ? "Confirmation sent." : `Send failed: ${result.error || result.body}`,
     });
   }
 
-  // ── bulkResend: send QR + edit link to ALL respondents ─────────────────────
+  // ── bulkResend: send confirmation to ALL respondents ─────────────────────
   if (action === "bulkResend") {
     const responses = await prisma.response.findMany({
       where: { formId, phoneNumber: { not: null } },
-      select: { id: true, phoneNumber: true, shortCode: true, editToken: true },
+      select: { phoneNumber: true, shortCode: true },
     });
-    const withPhone = responses.filter((r) => r.phoneNumber);
-    if (!withPhone.length) {
+    const recipients = responses
+      .filter((r) => r.phoneNumber)
+      .map((r) => ({ to: r.phoneNumber!, name: r.shortCode }));
+
+    if (!recipients.length) {
       return NextResponse.json({ success: true, message: "No respondents with phone numbers found.", sent: 0, failed: 0 });
     }
 
-    const customTpl = typeof body.message === "string" ? body.message.trim() : "";
+    const confirmationUrl = form.shortCode
+      ? `${origin}/f/${form.shortCode}`
+      : `${origin}/form/${formId}`;
+    const events = [form.title];
+
     let sent = 0;
     let failed = 0;
-    for (let i = 0; i < withPhone.length; i += 5) {
-      const batch = withPhone.slice(i, i + 5);
-      const results = await Promise.allSettled(
-        batch.map((r) => {
-          const editLink = `${origin}/edit/${r.id}?token=${r.editToken}`;
-          const qrLink = form.shortCode ? `${origin}/f/${form.shortCode}` : `${origin}/form/${formId}`;
-          const content = customTpl
-            ? customTpl.replace(/\{formTitle\}/g, form.title).replace(/\{shortCode\}/g, r.shortCode).replace(/\{editLink\}/g, editLink).replace(/\{qrLink\}/g, qrLink)
-            : buildQrEditMessage(form.title, r.shortCode, editLink);
-          return sendMessage(config, content, [r.phoneNumber!]);
-        }),
-      );
-      for (const res of results) {
-        if (res.status === "fulfilled" && res.value.success) sent++;
-        else failed++;
-      }
+    for (let i = 0; i < recipients.length; i += 10) {
+      const batch = recipients.slice(i, i + 10);
+      const result = await sendConfirmation(config, batch, form.templateNumber, confirmationUrl, form.headerMediaId, events);
+      if (result.success) sent += batch.length;
+      else failed += batch.length;
     }
 
     return NextResponse.json({
       success: true,
-      message: `Sent ${sent}/${withPhone.length}, ${failed} failed.`,
-      total: withPhone.length, sent, failed,
+      message: `Sent ${sent}/${recipients.length}, ${failed} failed.`,
+      total: recipients.length, sent, failed,
     });
   }
 
@@ -134,19 +133,24 @@ export async function POST(
       return NextResponse.json({ success: true, message: "No non-submitters with phone numbers found.", sent: 0, failed: 0 });
     }
 
-    const formLink = form.shortCode
+    const confirmationUrl = form.shortCode
       ? `${origin}/f/${form.shortCode}`
       : `${origin}/form/${formId}`;
-    const customTpl = typeof body.message === "string" ? body.message.trim() : "";
-    const content = customTpl
-      ? customTpl.replace(/\{formTitle\}/g, form.title).replace(/\{formLink\}/g, formLink)
-      : buildReminderMessage(form.title, formLink);
-    const result = await sendBulk(config, content, phones);
+    const recipients = phones.map((p) => ({ to: p, name: "reminder" }));
+
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < recipients.length; i += 10) {
+      const batch = recipients.slice(i, i + 10);
+      const result = await sendConfirmation(config, batch, form.templateNumber, confirmationUrl, form.headerMediaId, [form.title]);
+      if (result.success) sent += batch.length;
+      else failed += batch.length;
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Sent ${result.sent}/${result.total}, ${result.failed} failed.`,
-      ...result,
+      message: `Sent ${sent}/${recipients.length}, ${failed} failed.`,
+      total: recipients.length, sent, failed,
     });
   }
 
@@ -157,48 +161,104 @@ export async function POST(
       return NextResponse.json({ success: true, message: "No registered users with phone numbers found.", sent: 0, failed: 0 });
     }
 
-    const formLink = form.shortCode
+    const confirmationUrl = form.shortCode
       ? `${origin}/f/${form.shortCode}`
       : `${origin}/form/${formId}`;
-    const customTpl = typeof body.message === "string" ? body.message.trim() : "";
-    const content = customTpl
-      ? customTpl.replace(/\{formTitle\}/g, form.title).replace(/\{formLink\}/g, formLink)
-      : buildReminderMessage(form.title, formLink);
-    const result = await sendBulk(config, content, phones);
+    const recipients = phones.map((p) => ({ to: p, name: "reminder" }));
+
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < recipients.length; i += 10) {
+      const batch = recipients.slice(i, i + 10);
+      const result = await sendConfirmation(config, batch, form.templateNumber, confirmationUrl, form.headerMediaId, [form.title]);
+      if (result.success) sent += batch.length;
+      else failed += batch.length;
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Sent ${result.sent}/${result.total}, ${result.failed} failed.`,
-      ...result,
+      message: `Sent ${sent}/${recipients.length}, ${failed} failed.`,
+      total: recipients.length, sent, failed,
     });
   }
 
-  // ── custom: custom message to submitted users ─────────────────────────────
+  // ── custom: send confirmation to submitted users ─────────────────────────
   if (action === "custom") {
-    const customText = sanitize(body.message || "").trim();
-    if (!customText) {
-      return NextResponse.json({ error: "Message text is required." }, { status: 400 });
-    }
-
     const responses = await prisma.response.findMany({
       where: { formId, phoneNumber: { not: null } },
-      select: { phoneNumber: true },
+      select: { phoneNumber: true, shortCode: true },
     });
-    const phones = responses
-      .map((r) => r.phoneNumber)
-      .filter((p): p is string => !!p);
+    const recipients = responses
+      .filter((r) => r.phoneNumber)
+      .map((r) => ({ to: r.phoneNumber!, name: r.shortCode }));
 
-    if (!phones.length) {
+    if (!recipients.length) {
       return NextResponse.json({ success: true, message: "No submitted users with phone numbers found.", sent: 0, failed: 0 });
     }
 
-    const content = buildCustomMessage(form.title, customText);
-    const result = await sendBulk(config, content, phones);
+    const confirmationUrl = form.shortCode
+      ? `${origin}/f/${form.shortCode}`
+      : `${origin}/form/${formId}`;
+    const events = [form.title];
+
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < recipients.length; i += 10) {
+      const batch = recipients.slice(i, i + 10);
+      const result = await sendConfirmation(config, batch, form.templateNumber, confirmationUrl, form.headerMediaId, events);
+      if (result.success) sent += batch.length;
+      else failed += batch.length;
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Sent ${result.sent}/${result.total}, ${result.failed} failed.`,
-      ...result,
+      message: `Sent ${sent}/${recipients.length}, ${failed} failed.`,
+      total: recipients.length, sent, failed,
+    });
+  }
+
+  // ── sendConfirmation: TC_WA REST API confirmation to respondents ──────────
+  if (action === "sendConfirmation") {
+    const responses = await prisma.response.findMany({
+      where: { formId, phoneNumber: { not: null } },
+      select: { phoneNumber: true, shortCode: true },
+    });
+    const recipients = responses
+      .filter((r) => r.phoneNumber)
+      .map((r) => ({ to: r.phoneNumber!, name: r.shortCode }));
+
+    if (!recipients.length) {
+      return NextResponse.json({ success: true, message: "No respondents with phone numbers found.", sent: 0, failed: 0 });
+    }
+
+    const confirmationUrl = form.shortCode
+      ? `${origin}/f/${form.shortCode}`
+      : `${origin}/form/${formId}`;
+    const events = [form.title];
+
+    // Batch in groups of 10 to avoid overwhelming the API
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < recipients.length; i += 10) {
+      const batch = recipients.slice(i, i + 10);
+      const result = await sendConfirmation(
+        config,
+        batch,
+        form.templateNumber,
+        confirmationUrl,
+        form.headerMediaId,
+        events,
+      );
+      if (result.success) sent += batch.length;
+      else failed += batch.length;
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Confirmation sent ${sent}/${recipients.length}, ${failed} failed.`,
+      total: recipients.length,
+      sent,
+      failed,
     });
   }
 

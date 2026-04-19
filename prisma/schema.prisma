@@ -37,6 +37,8 @@ model Form {
   theme        String   @default("{}") // JSON string for form theme customization
   notifyEmails String   @default("") // Comma-separated emails to notify on submission
   autoSubmit   Boolean  @default(false) // Auto-submit after last section completed (5s countdown)
+  templateNumber Int     @default(3)     // TC_WA confirmation template number
+  headerMediaId  String?                 // TC_WA media UUID for header image
   authorId    String
   author      User       @relation(fields: [authorId], references: [id])
   createdAt   DateTime   @default(now())
@@ -170,15 +172,11 @@ model RegisteredUserData {
 model MessagingConfig {
   id              String   @id @default(uuid())
   enabled         Boolean  @default(false)
-  provider        String   @default("TzuChiWABI") // provider label
-  apiBaseUrl      String   @default("")            // e.g. https://wabiwebhook.tzuchi.com.my
-  apiPort         Int      @default(441)
-  apiPath         String   @default("/api/sendMessage")
-  tokenId         String   @default("")            // secret – masked in UI
-  sender          String   @default("WhatsApp")    // WhatsApp | SmsModem | SmsGateway | Email
-  requestTimeout  Int      @default(10000)         // ms
-  maxRetries      Int      @default(3)
-  tlsVerify       Boolean  @default(true)
+  // TC_WA REST API (send-confirmation / media upload)
+  waApiEnabled       Boolean @default(false)
+  waApiBaseUrl       String  @default("")           // e.g. wabiwebhook.tzuchi.com.my
+  waApiPort          Int     @default(3000)
+  waApiBearerToken   String  @default("")           // AES-256-CBC encrypted
   updatedAt       DateTime @updatedAt
   createdAt       DateTime @default(now())
 }

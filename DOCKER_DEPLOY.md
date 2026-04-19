@@ -100,7 +100,14 @@ docker pull ghcr.io/y2ktan/ai-form-registration:init
 docker stop ai-form-registration
 docker rm ai-form-registration
 
-# 3. Run the new app
+# 3. Run database updates (migrations & seed) BEFORE starting the new app
+# This connects to the same volume and updates the DB schema
+docker run --rm \
+  -e DATABASE_URL="file:/app/data/dev.db" \
+  -v ai-form-registration_db:/app/data \
+  ghcr.io/y2ktan/ai-form-registration:init
+
+# 4. Run the new app
 docker run -d \
   --name ai-form-registration \
   --restart unless-stopped \
@@ -115,13 +122,6 @@ docker run -d \
   -v ai-form-registration_uploads:/app/public/uploads \
   -v ai-form-registration_fonts:/app/public/fonts \
   ghcr.io/y2ktan/ai-form-registration:latest
-
-# 4. If there are DB schema changes, run the init container
-docker run --rm \
-  -e DATABASE_URL="file:/app/data/dev.db" \
-  -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
-  -v ai-form-registration_db:/app/data \
-  ghcr.io/y2ktan/ai-form-registration:init
 ```
 
 ---
