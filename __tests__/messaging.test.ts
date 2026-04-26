@@ -287,6 +287,177 @@ describe("fireAndForgetConfirmation", () => {
   });
 });
 
+// ─── Failure isolation: messaging must NEVER break form submit/edit ─────────
+
+describe("failure isolation — non-blocking guarantees", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("returns void synchronously (caller is not blocked by slow prisma)", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    // Slow prisma call — caller must NOT wait for this
+    vi.mocked(prisma.messagingConfig.findFirst).mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(null), 200)) as never,
+    );
+
+    const t0 = Date.now();
+    const ret = fireAndForgetConfirmation(
+      [{ to: "601165232155", name: "test" }],
+      3,
+      "https://example.com/confirm",
+    );
+    const elapsed = Date.now() - t0;
+
+    expect(ret).toBeUndefined();
+    expect(elapsed).toBeLessThan(50); // returned well before the 200ms prisma call
+    await new Promise((r) => setTimeout(r, 250));
+  });
+
+  test("does not throw when prisma fails (DB error during config fetch)", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.messagingConfig.findFirst).mockRejectedValue(new Error("DB connection lost"));
+
+    expect(() => {
+      fireAndForgetConfirmation(
+        [{ to: "601165232155", name: "test" }],
+        3,
+        "https://example.com/confirm",
+      );
+    }).not.toThrow();
+
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  test("does not throw when fetch rejects (TC_WA API unreachable)", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.messagingConfig.findFirst).mockResolvedValue({
+      id: "cfg-1",
+      enabled: true,
+      waApiEnabled: true,
+      waApiBaseUrl: "wabiwebhook.tzuchi.com.my",
+      waApiPort: 3000,
+      waApiBearerToken: "encrypted:test-token",
+      updatedAt: new Date(),
+      createdAt: new Date(),
+    } as never);
+
+    const mockFetch = vi.fn().mockRejectedValue(new Error("Network unreachable"));
+    vi.stubGlobal("fetch", mockFetch);
+
+    expect(() => {
+      fireAndForgetConfirmation(
+        [{ to: "601165232155", name: "test" }],
+        3,
+        "https://example.com/confirm",
+      );
+    }).not.toThrow();
+
+    await new Promise((r) => setTimeout(r, 50));
+    vi.unstubAllGlobals();
+  });
+
+  test("does not throw when TC_WA API returns 403 (invalid token)", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.messagingConfig.findFirst).mockResolvedValue({
+      id: "cfg-1",
+      enabled: true,
+      waApiEnabled: true,
+      waApiBaseUrl: "wabiwebhook.tzuchi.com.my",
+      waApiPort: 3000,
+      waApiBearerToken: "encrypted:test-token",
+      updatedAt: new Date(),
+      createdAt: new Date(),
+    } as never);
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: () => Promise.resolve('{"error":"Invalid token"}'),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    expect(() => {
+      fireAndForgetConfirmation(
+        [{ to: "601165232155", name: "test" }],
+        3,
+        "https://example.com/confirm",
+      );
+    }).not.toThrow();
+
+    await new Promise((r) => setTimeout(r, 50));
+    vi.unstubAllGlobals();
+  });
+
+  test("does not throw when bearer token decryption fails", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    const { decryptKey } = await import("@/lib/google-sheets-crypto");
+    vi.mocked(prisma.messagingConfig.findFirst).mockResolvedValue({
+      id: "cfg-1",
+      enabled: true,
+      waApiEnabled: true,
+      waApiBaseUrl: "wabiwebhook.tzuchi.com.my",
+      waApiPort: 3000,
+      waApiBearerToken: "corrupted-data",
+      updatedAt: new Date(),
+      createdAt: new Date(),
+    } as never);
+    vi.mocked(decryptKey).mockImplementationOnce(() => {
+      throw new Error("Bad ciphertext");
+    });
+
+    expect(() => {
+      fireAndForgetConfirmation(
+        [{ to: "601165232155", name: "test" }],
+        3,
+        "https://example.com/confirm",
+      );
+    }).not.toThrow();
+
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  test("sendConfirmation returns SendResult on synchronous fetch throw", async () => {
+    const config = makeConfig();
+    const mockFetch = vi.fn().mockImplementation(() => {
+      throw new Error("Synchronous fetch failure");
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await sendConfirmation(
+      config,
+      [{ to: "601165232155", name: "test" }],
+      3,
+      "https://example.com/confirm",
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Synchronous fetch failure");
+
+    vi.unstubAllGlobals();
+  });
+
+  test("sendConfirmation handles malformed response body gracefully", async () => {
+    const config = makeConfig();
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.reject(new Error("Body read failed")),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await sendConfirmation(
+      config,
+      [{ to: "601165232155", name: "test" }],
+      3,
+      "https://example.com/confirm",
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Body read failed");
+
+    vi.unstubAllGlobals();
+  });
+});
+
 // ─── Bearer token security ─────────────────────────────────────────────────
 
 describe("bearer token security", () => {
