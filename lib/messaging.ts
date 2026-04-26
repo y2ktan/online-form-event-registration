@@ -1,29 +1,26 @@
 /**
  * Shared WhatsApp / messaging helpers.
  *
- * sendMessage     — sends a single message via the configured provider
- * sendBulk        — sends to multiple recipients (batched, fire-and-forget safe)
- * buildQrEditMsg  — compose the standard QR + edit-link message body
- * getMessagingConfig — fetch global config (cached per request)
+ * sendConfirmation         — sends confirmation via TC_WA REST API
+ * uploadWaMedia            — uploads media via TC_WA REST API
+ * deleteWaMedia            — deletes media via TC_WA REST API
+ * fireAndForgetConfirmation — async non-blocking wrapper
+ * getMessagingConfig       — fetch global config (cached per request)
  */
 
 import { prisma } from "@/lib/prisma";
-import https from "https";
+import { decryptKey } from "@/lib/google-sheets-crypto";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface MessagingConfig {
   id: string;
   enabled: boolean;
-  provider: string;
-  apiBaseUrl: string;
-  apiPort: number;
-  apiPath: string;
-  tokenId: string;
-  sender: string;
-  requestTimeout: number;
-  maxRetries: number;
-  tlsVerify: boolean;
+  // TC_WA REST API fields
+  waApiEnabled: boolean;
+  waApiBaseUrl: string;
+  waApiPort: number;
+  waApiBearerToken: string; // decrypted at runtime
 }
 
 export interface SendResult {
@@ -33,6 +30,13 @@ export interface SendResult {
   error?: string;
 }
 
+export interface ConfirmationRecipient {
+  to: string;
+  name: string;
+}
+
+const REQUEST_TIMEOUT = 30000; // ms
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 /** Fetches the global messaging config. Returns null if not configured/enabled. */
@@ -41,210 +45,200 @@ export async function getMessagingConfig(): Promise<MessagingConfig | null> {
     const config = await prisma.messagingConfig.findFirst({
       orderBy: { updatedAt: "desc" },
     });
-    if (!config || !config.enabled || !config.apiBaseUrl || !config.tokenId) {
+    if (!config || !config.enabled || !config.waApiEnabled || !config.waApiBearerToken) {
       return null;
     }
-    return config as MessagingConfig;
+    // Decrypt WA API bearer token
+    let bearerToken = "";
+    try {
+      bearerToken = decryptKey(config.waApiBearerToken).replace(/^Bearer\s+/i, "").trim();
+    } catch {
+      console.error("[Messaging] Failed to decrypt WA API bearer token");
+      return null;
+    }
+    return {
+      ...config,
+      waApiBearerToken: bearerToken,
+    } as MessagingConfig;
   } catch {
     return null;
   }
 }
 
-// ─── Low-level send ───────────────────────────────────────────────────────────
+// ─── TC_WA REST API: send-confirmation ────────────────────────────────────────
 
-/** Send a single message to one or more recipients using the TzuChi WABI binary protocol. */
-export async function sendMessage(
-  config: MessagingConfig,
-  content: string,
-  recipients: string[],
-): Promise<SendResult> {
-  if (!recipients.length || !content) {
-    return { success: false, error: "No recipients or empty content" };
-  }
-
-  const messageData = {
-    tokenId: config.tokenId,
-    sender: config.sender,
-    message: { content },
-    recipients,
-  };
-
-  const jsonString = JSON.stringify(messageData);
-  const jsonBuffer = Buffer.from(jsonString, "utf8");
-  const lengthBuffer = Buffer.alloc(4);
-  lengthBuffer.writeUInt32BE(jsonBuffer.byteLength, 0);
-  const binaryPayload = Buffer.concat([lengthBuffer, jsonBuffer]);
-
-  let hostname: string;
-  let basePath = "";
-  try {
-    const parsed = new URL(config.apiBaseUrl);
-    hostname = parsed.hostname;
-    basePath = parsed.pathname.replace(/\/$/, ""); // strip trailing slash
-  } catch {
-    hostname = config.apiBaseUrl.replace(/^https?:\/\//, "").split("/")[0];
-  }
-  const fullPath = basePath + config.apiPath;
-
-  console.log("[Messaging] ── sendMessage START ──");
-  console.log("[Messaging]   hostname:", hostname);
-  console.log("[Messaging]   port:", config.apiPort);
-  console.log("[Messaging]   path:", fullPath);
-  console.log("[Messaging]   sender:", config.sender);
-  console.log("[Messaging]   recipients:", recipients);
-  console.log("[Messaging]   tlsVerify:", config.tlsVerify);
-  console.log("[Messaging]   timeout:", config.requestTimeout);
-  console.log("[Messaging]   payload length:", jsonBuffer.byteLength, "bytes");
-  console.log("[Messaging]   payload JSON:", jsonString);
-
-  return new Promise<SendResult>((resolve) => {
-    const req = https.request(
-      {
-        hostname,
-        port: config.apiPort,
-        path: fullPath,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": binaryPayload.length,
-        },
-        rejectUnauthorized: config.tlsVerify,
-        timeout: config.requestTimeout,
-      },
-      (res) => {
-        console.log("[Messaging]   response statusCode:", res.statusCode);
-        console.log("[Messaging]   response headers:", JSON.stringify(res.headers));
-        let data = "";
-        res.on("data", (chunk: Buffer) => (data += chunk));
-        res.on("end", () => {
-          console.log("[Messaging]   response body:", data);
-          console.log("[Messaging] ── sendMessage END (status", res.statusCode, ") ──");
-          resolve({
-            success: res.statusCode === 200,
-            status: res.statusCode ?? 0,
-            body: data,
-          });
-        });
-      },
-    );
-    req.on("error", (err) => {
-      console.error("[Messaging]   request error:", err.message);
-      console.error("[Messaging]   error code:", (err as NodeJS.ErrnoException).code);
-      console.log("[Messaging] ── sendMessage END (error) ──");
-      resolve({ success: false, error: err.message });
-    });
-    req.on("timeout", () => {
-      console.error("[Messaging]   request timed out after", config.requestTimeout, "ms");
-      console.log("[Messaging] ── sendMessage END (timeout) ──");
-      req.destroy();
-      resolve({ success: false, error: "Request timed out" });
-    });
-    req.write(binaryPayload);
-    req.end();
-  });
+/** Build the base URL for the TC_WA REST API. */
+function waApiUrl(config: MessagingConfig, path: string): string {
+  const base = config.waApiBaseUrl.replace(/\/$/, "");
+  const proto = base.startsWith("http") ? "" : "http://";
+  return `${proto}${base}:${config.waApiPort}${path}`;
 }
-
-// ─── Bulk send (fire-and-forget safe, bounded concurrency) ────────────────────
-
-const MAX_CONCURRENCY = 5;
-
-/** Send a message to many phone numbers in parallel batches. Returns per-recipient results. */
-export async function sendBulk(
-  config: MessagingConfig,
-  content: string,
-  phoneNumbers: string[],
-): Promise<{ total: number; sent: number; failed: number }> {
-  const unique = [...new Set(phoneNumbers.filter(Boolean))];
-  let sent = 0;
-  let failed = 0;
-
-  for (let i = 0; i < unique.length; i += MAX_CONCURRENCY) {
-    const batch = unique.slice(i, i + MAX_CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map((phone) => sendMessage(config, content, [phone])),
-    );
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value.success) sent++;
-      else failed++;
-    }
-  }
-
-  return { total: unique.length, sent, failed };
-}
-
-// ─── Message builders ─────────────────────────────────────────────────────────
-
-/** Build the standard QR code + edit link WhatsApp message. */
-export function buildQrEditMessage(
-  formTitle: string,
-  shortCode: string,
-  editLink: string,
-): string {
-  const qrPageUrl = editLink.replace(/\/edit\//, "/f/").replace(/\?token=.*$/, "").replace(/\/[^/]+$/, `/${shortCode}`);
-  return [
-    `✅ *${formTitle}*`,
-    ``,
-    `Your submission ID: *${shortCode}*`,
-    ``,
-    `📱 View your QR code:`,
-    qrPageUrl,
-    ``,
-    `✏️ Edit your response:`,
-    editLink,
-    ``,
-    `Please keep this message for your reference.`,
-  ].join("\n");
-}
-
-/** Build a reminder message for users who haven't submitted yet. */
-export function buildReminderMessage(
-  formTitle: string,
-  formLink: string,
-): string {
-  return [
-    `📋 *Reminder: ${formTitle}*`,
-    ``,
-    `You have not yet submitted your response for this form.`,
-    ``,
-    `🔗 Submit now:`,
-    formLink,
-    ``,
-    `Thank you for your cooperation.`,
-  ].join("\n");
-}
-
-/** Build a custom engagement message. */
-export function buildCustomMessage(
-  formTitle: string,
-  customText: string,
-): string {
-  return [
-    `📢 *${formTitle}*`,
-    ``,
-    customText,
-  ].join("\n");
-}
-
-// ─── Fire-and-forget helper for use in API routes ─────────────────────────────
 
 /**
- * Send a WhatsApp message without blocking the API response.
- * Logs errors to console but never throws.
+ * Send a WhatsApp confirmation via the TC_WA REST API.
+ * POST /api/confirmation/send-confirmation
  */
-export function fireAndForgetMessage(
-  content: string,
-  recipients: string[],
+export async function sendConfirmation(
+  config: MessagingConfig,
+  recipients: ConfirmationRecipient[],
+  templateNumber: number,
+  confirmationUrl: string,
+  headerMediaId?: string | null,
+  events?: string[],
+): Promise<SendResult> {
+  if (!recipients.length) {
+    return { success: false, error: "No recipients" };
+  }
+
+  const url = waApiUrl(config, "/api/confirmation/send-confirmation");
+  const payload: Record<string, unknown> = {
+    recipients,
+    templateNumber,
+    confirmationUrl,
+  };
+  if (headerMediaId) payload.headerMediaId = headerMediaId;
+  if (events?.length) payload.events = events;
+
+  console.log("[WA-API] ── sendConfirmation START ──");
+  console.log("[WA-API]   url:", url);
+  console.log("[WA-API]   bearer length:", config.waApiBearerToken.length);
+  console.log("[WA-API]   bearer first20:", config.waApiBearerToken.slice(0, 20));
+  console.log("[WA-API]   bearer last20:", config.waApiBearerToken.slice(-20));
+  console.log("[WA-API]   bearer has whitespace:", /\s/.test(config.waApiBearerToken));
+  console.log("[WA-API]   recipients:", recipients.length);
+  console.log("[WA-API]   templateNumber:", templateNumber);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.waApiBearerToken}`,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    });
+    const body = await res.text();
+    console.log("[WA-API]   status:", res.status);
+    console.log("[WA-API]   body:", body);
+    console.log("[WA-API] ── sendConfirmation END ──");
+    return { success: res.ok, status: res.status, body };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[WA-API]   error:", msg);
+    console.log("[WA-API] ── sendConfirmation END (error) ──");
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Upload media to the TC_WA REST API.
+ * POST /api/media/upload (multipart/form-data)
+ * Returns the media ID from the response.
+ */
+export async function uploadWaMedia(
+  config: MessagingConfig,
+  fileBuffer: Buffer,
+  filename: string,
+  mimeType: string,
+): Promise<{ success: boolean; mediaId?: string; error?: string }> {
+  const url = waApiUrl(config, "/api/media/upload");
+
+  const formData = new FormData();
+  const blob = new Blob([fileBuffer], { type: mimeType });
+  formData.append("files", blob, filename);
+
+  console.log("[WA-API] ── uploadMedia START ──");
+  console.log("[WA-API]   url:", url);
+  console.log("[WA-API]   filename:", filename);
+  console.log("[WA-API]   size:", fileBuffer.length);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.waApiBearerToken}`,
+      },
+      body: formData,
+      signal: AbortSignal.timeout(30000),
+    });
+    const body = await res.text();
+    console.log("[WA-API]   status:", res.status);
+    console.log("[WA-API]   body:", body);
+    console.log("[WA-API] ── uploadMedia END ──");
+
+    if (!res.ok) {
+      return { success: false, error: `Upload failed (${res.status}): ${body}` };
+    }
+    const data = JSON.parse(body);
+    const mediaId = data?.results?.[0]?.id;
+    if (!mediaId) {
+      return { success: false, error: "No media ID in response" };
+    }
+    return { success: true, mediaId };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[WA-API]   error:", msg);
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Delete media from the TC_WA REST API.
+ * DELETE /api/media/{id}
+ */
+export async function deleteWaMedia(
+  config: MessagingConfig,
+  mediaId: string,
+): Promise<{ success: boolean; status?: number; error?: string }> {
+  const url = waApiUrl(config, `/api/media/${encodeURIComponent(mediaId)}`);
+
+  console.log("[WA-API] ── deleteMedia START ──");
+  console.log("[WA-API]   url:", url);
+
+  try {
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${config.waApiBearerToken}`,
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    });
+    const body = await res.text();
+    console.log("[WA-API]   status:", res.status);
+    console.log("[WA-API]   body:", body);
+    console.log("[WA-API] ── deleteMedia END ──");
+    if (!res.ok) {
+      return { success: false, status: res.status, error: `Delete failed (${res.status}): ${body}` };
+    }
+    return { success: true, status: res.status };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[WA-API]   error:", msg);
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Fire-and-forget: send confirmation without blocking the API response.
+ */
+export function fireAndForgetConfirmation(
+  recipients: ConfirmationRecipient[],
+  templateNumber: number,
+  confirmationUrl: string,
+  headerMediaId?: string | null,
+  events?: string[],
 ): void {
   (async () => {
     try {
       const config = await getMessagingConfig();
-      if (!config) return;
-      const result = await sendMessage(config, content, recipients);
+      if (!config || !config.waApiEnabled || !config.waApiBearerToken) return;
+      const result = await sendConfirmation(config, recipients, templateNumber, confirmationUrl, headerMediaId, events);
       if (!result.success) {
-        console.error("[Messaging] Send failed:", result.error || result.body);
+        console.error("[WA-API] Confirmation send failed:", result.error || result.body);
       }
     } catch (err) {
-      console.error("[Messaging] Fire-and-forget error:", err);
+      console.error("[WA-API] Fire-and-forget confirmation error:", err);
     }
   })();
 }

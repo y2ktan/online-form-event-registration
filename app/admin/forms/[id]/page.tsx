@@ -159,6 +159,8 @@ interface FormData {
   theme: FormTheme;
   notifyEmails: string;
   autoSubmit: boolean;
+  templateNumber: number;
+  headerMediaId: string | null;
   sections: SectionData[];
   questions: QuestionData[];
 }
@@ -1249,6 +1251,8 @@ function FormBuilderPageInner() {
   const [messagingAction, setMessagingAction] = useState<{ loading: boolean; result: string; type: string }>({ loading: false, result: "", type: "" });
   const [engagementMsg, setEngagementMsg] = useState("");
   const [messagingEnabled, setMessagingEnabled] = useState(false);
+  const [waApiEnabled, setWaApiEnabled] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
   const [quickActionMsgs, setQuickActionMsgs] = useState({
     bulkResend: "✅ {formTitle}\n\nYour submission ID: {shortCode}\n\nView your QR code:\n{qrLink}\n\nEdit your response:\n{editLink}\n\nPlease keep this message for your reference.",
     reminder: "📋 Reminder: {formTitle}\n\nYou have not yet submitted your response for this form.\n\nSubmit now:\n{formLink}\n\nThank you for your cooperation.",
@@ -1287,6 +1291,7 @@ function FormBuilderPageInner() {
   useEffect(() => {
     fetch("/api/admin/messaging").then(r => r.ok ? r.json() : null).then(d => {
       if (d?.enabled) setMessagingEnabled(true);
+      if (d?.waApiEnabled) setWaApiEnabled(true);
     }).catch(() => {});
   }, []);
   const [showPreview, setShowPreview] = useState(false);
@@ -1444,7 +1449,7 @@ function FormBuilderPageInner() {
           questions,
         });
       }
-      setForm({ ...data, theme: parseTheme(data.theme), notifyEmails: data.notifyEmails || "", autoSubmit: data.autoSubmit ?? false, sections, questions });
+      setForm({ ...data, theme: parseTheme(data.theme), notifyEmails: data.notifyEmails || "", autoSubmit: data.autoSubmit ?? false, templateNumber: data.templateNumber ?? 3, headerMediaId: data.headerMediaId ?? null, sections, questions });
     }
   }, [formId]);
 
@@ -1480,6 +1485,8 @@ function FormBuilderPageInner() {
             theme: serializeTheme(form.theme),
             notifyEmails: form.notifyEmails,
             autoSubmit: form.autoSubmit,
+            templateNumber: form.templateNumber,
+            headerMediaId: form.headerMediaId,
             sections: form.sections.map((s) => ({
               id: s.id,
               title: s.title,
@@ -3530,6 +3537,123 @@ function FormBuilderPageInner() {
                 ))}
               </div>
             </div>
+
+            {/* TC_WA Confirmation card — visible only when WA REST API is enabled */}
+            {waApiEnabled && form && (
+              <div className="rounded-xl border border-green-200 bg-green-50/30 p-4 shadow-sm sm:p-6">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-green-800 mb-3">
+                  <MessageSquare className="h-4 w-4" />
+                  WhatsApp Confirmation (TC_WA)
+                </h3>
+
+                {/* Template Number */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700">Template Number</label>
+                  <input
+                    type="number"
+                    value={form.templateNumber}
+                    onChange={(e) => setForm({ ...form, templateNumber: Math.max(1, parseInt(e.target.value) || 3) })}
+                    min={1}
+                    className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 sm:max-w-[200px]"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">WhatsApp template number for confirmations (default: 3)</p>
+                </div>
+
+                {/* Header Media Upload */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700">Header Image</label>
+                  {form.headerMediaId ? (
+                    <div className="mt-1 flex items-center gap-2 rounded-lg border border-green-200 bg-white px-3 py-2">
+                      <Image className="h-4 w-4 text-green-600" />
+                      <span className="flex-1 truncate text-sm text-gray-700">{form.headerMediaId}</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const id = form.headerMediaId;
+                          if (!id) return;
+                          // Optimistic clear — UX never blocked by external API
+                          setForm({ ...form, headerMediaId: null });
+                          try {
+                            const res = await fetch(
+                              `/api/admin/messaging/media/${encodeURIComponent(id)}`,
+                              { method: "DELETE" },
+                            );
+                            if (!res.ok) console.warn("[Media] Failed to delete media:", id);
+                          } catch (err) {
+                            console.warn("[Media] Delete request failed:", err);
+                          }
+                        }}
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-500"
+                        title="Remove header image"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1">
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-3 text-sm text-gray-500 hover:border-green-400 hover:bg-green-50/30">
+                        {mediaUploading ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Uploading...</>
+                        ) : (
+                          <><Upload className="h-4 w-4" /> Upload header image</>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="hidden"
+                          disabled={mediaUploading}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setMediaUploading(true);
+                            try {
+                              const fd = new FormData();
+                              fd.append("file", file);
+                              const res = await fetch("/api/admin/messaging/media", { method: "POST", body: fd });
+                              const data = await res.json();
+                              if (res.ok && data.mediaId) {
+                                setForm((prev) => prev ? { ...prev, headerMediaId: data.mediaId } : prev);
+                              } else {
+                                alert(data.error || "Upload failed");
+                              }
+                            } catch {
+                              alert("Upload failed");
+                            } finally {
+                              setMediaUploading(false);
+                              e.target.value = "";
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
+                  <p className="mt-1 text-xs text-gray-400">Upload an image for the WhatsApp message header (JPEG, PNG, WebP, GIF — max 5MB)</p>
+                </div>
+
+                {/* Send Confirmation Button */}
+                <div className="flex flex-col gap-3 border-t border-green-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-gray-500">
+                    Send WhatsApp confirmation to all respondents with phone numbers using the template above.
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (confirm("Send WhatsApp confirmation to ALL respondents with phone numbers?")) {
+                        sendMessagingAction("sendConfirmation");
+                      }
+                    }}
+                    disabled={messagingAction.loading}
+                    className="flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50 sm:w-auto sm:justify-start"
+                  >
+                    <Send className="h-4 w-4" />
+                    {messagingAction.loading && messagingAction.type === "sendConfirmation" ? "Sending..." : "Send Confirmation"}
+                  </button>
+                </div>
+
+                {messagingAction.result && messagingAction.type === "sendConfirmation" && (
+                  <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">{messagingAction.result}</div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

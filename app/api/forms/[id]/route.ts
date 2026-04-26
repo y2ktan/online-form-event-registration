@@ -94,6 +94,8 @@ export async function PUT(
     if (body.theme !== undefined) updateData.theme = typeof body.theme === "string" ? body.theme : JSON.stringify(body.theme);
     if (body.notifyEmails !== undefined) updateData.notifyEmails = sanitize(String(body.notifyEmails));
     if (body.autoSubmit !== undefined) updateData.autoSubmit = Boolean(body.autoSubmit);
+    if (body.templateNumber !== undefined) updateData.templateNumber = Math.max(1, parseInt(body.templateNumber) || 3);
+    if (body.headerMediaId !== undefined) updateData.headerMediaId = body.headerMediaId ? sanitize(String(body.headerMediaId)).trim() : null;
 
     await prisma.form.update({
       where: { id },

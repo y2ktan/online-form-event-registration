@@ -5,7 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { sanitize } from "@/lib/sanitize";
 import { isGridType } from "@/lib/question-types";
 import { maskValue } from "@/lib/masking";
-import { fireAndForgetMessage, buildQrEditMessage } from "@/lib/messaging";
+import { fireAndForgetConfirmation } from "@/lib/messaging";
 import { markFormDirty } from "@/lib/google-sheets";
 
 interface GridItem {
@@ -296,21 +296,24 @@ export async function PUT(
       where: { id },
       include: {
         answers: { include: { question: true } },
-        form: { select: { title: true } },
+        form: { select: { title: true, shortCode: true, templateNumber: true, headerMediaId: true } },
       },
     });
 
-    // Fire-and-forget: send WhatsApp QR + edit link notification on update
+    // Fire-and-forget: send WhatsApp confirmation on update
     const updatedPhone = phoneNumber !== undefined ? sanitize(phoneNumber) : existing.phoneNumber;
     if (updatedPhone) {
       const origin = request.headers.get("origin") || request.headers.get("referer")?.replace(/\/[^/]*$/, "") || "";
-      const editLink = `${origin}/edit/${id}?token=${existing.editToken}`;
-      const waMessage = buildQrEditMessage(
-        updated?.form?.title || "Form",
-        existing.shortCode,
-        editLink,
+      const confirmationUrl = updated?.form?.shortCode
+        ? `${origin}/f/${updated.form.shortCode}`
+        : `${origin}/form/${existing.formId}`;
+      fireAndForgetConfirmation(
+        [{ to: updatedPhone, name: existing.shortCode }],
+        updated?.form?.templateNumber ?? 3,
+        confirmationUrl,
+        updated?.form?.headerMediaId ?? null,
+        [updated?.form?.title || "Form"],
       );
-      fireAndForgetMessage(waMessage, [updatedPhone]);
     }
 
     // Fire-and-forget: mark form dirty for Google Sheets sync
