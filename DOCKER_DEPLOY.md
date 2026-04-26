@@ -18,18 +18,30 @@ echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password
 
 We build two images: a lean **runner** image for the app and a separate **init** image for database migrations/seed.
 
+Pick a release version first so you can push both an immutable tag and `latest`:
+
+```bash
+export VERSION=2026.04.26-1
+```
+
 ```bash
 # 1. Build the main application (must specify --target runner)
-docker build . -t ghcr.io/y2ktan/ai-form-registration:latest --target runner --platform linux/amd64
+docker build . -t ghcr.io/y2ktan/ai-form-registration:$VERSION --target runner --platform linux/amd64
 
 # 2. Build the database init image (handles migrations/seed)
-docker build . -t ghcr.io/y2ktan/ai-form-registration:init --target init --platform linux/amd64
+docker build . -t ghcr.io/y2ktan/ai-form-registration:init-$VERSION --target init --platform linux/amd64
 
-# 3. Verify the app image runs the server (not prisma)
+# 3. Tag them as latest aliases
+docker tag ghcr.io/y2ktan/ai-form-registration:$VERSION ghcr.io/y2ktan/ai-form-registration:latest
+docker tag ghcr.io/y2ktan/ai-form-registration:init-$VERSION ghcr.io/y2ktan/ai-form-registration:init
+
+# 4. Verify the app image runs the server (not prisma)
 docker inspect ghcr.io/y2ktan/ai-form-registration:latest --format='{{.Config.Cmd}}'
 # Expected: [node server.js]
 
-# 4. Push both to GHCR
+# 5. Push both immutable and latest tags to GHCR
+docker push ghcr.io/y2ktan/ai-form-registration:$VERSION
+docker push ghcr.io/y2ktan/ai-form-registration:init-$VERSION
 docker push ghcr.io/y2ktan/ai-form-registration:latest
 docker push ghcr.io/y2ktan/ai-form-registration:init
 ```
@@ -43,6 +55,7 @@ Use `buildx` to publish directly to GHCR (especially useful when building on mac
 docker buildx build . \
   --target runner \
   --platform linux/amd64 \
+  -t ghcr.io/y2ktan/ai-form-registration:$VERSION \
   -t ghcr.io/y2ktan/ai-form-registration:latest \
   --push
 
@@ -50,8 +63,17 @@ docker buildx build . \
 docker buildx build . \
   --target init \
   --platform linux/amd64 \
+  -t ghcr.io/y2ktan/ai-form-registration:init-$VERSION \
   -t ghcr.io/y2ktan/ai-form-registration:init \
   --push
+```
+
+### Pre-push validation
+
+Run unit tests before publishing the image:
+
+```bash
+npm run test
 ```
 
 ---
@@ -73,9 +95,11 @@ docker run -d \
   -e DATABASE_URL="file:/app/data/dev.db" \
   -e JWT_SECRET="your-jwt-secret" \
   -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
-  -e NEXTAUTH_URL="https://yourdomain.com" \
+  -e APP_URL="https://yourdomain.com" \
   -e GOOGLE_SHEETS_ENCRYPTION_KEY="your-encryption-key" \
   -e CRON_SECRET="your-cron-secret" \
+  -e NEXT_PUBLIC_TURNSTILE_SITE_KEY="your-turnstile-site-key" \
+  -e TURNSTILE_SECRET_KEY="your-turnstile-secret-key" \
   -v ai-form-registration_db:/app/data \
   -v ai-form-registration_uploads:/app/public/uploads \
   -v ai-form-registration_fonts:/app/public/fonts \
@@ -91,23 +115,53 @@ docker run --rm \
 
 ### Releasing a New Version
 
+From your local machine, build and publish a versioned release:
+
 ```bash
-# 1. Pull latest images
+export VERSION=2026.04.26-1
+
+docker buildx build . \
+  --target runner \
+  --platform linux/amd64 \
+  -t ghcr.io/y2ktan/ai-form-registration:$VERSION \
+  -t ghcr.io/y2ktan/ai-form-registration:latest \
+  --push
+
+docker buildx build . \
+  --target init \
+  --platform linux/amd64 \
+  -t ghcr.io/y2ktan/ai-form-registration:init-$VERSION \
+  -t ghcr.io/y2ktan/ai-form-registration:init \
+  --push
+```
+
+Then on the VPS, sync the server to the new images:
+
+```bash
+# 1. Choose the release you want on the VPS
+export VERSION=2026.04.26-1
+
+# 2. Pull the exact images for that release
+docker pull ghcr.io/y2ktan/ai-form-registration:$VERSION
+docker pull ghcr.io/y2ktan/ai-form-registration:init-$VERSION
+
+# 3. Refresh the rolling aliases too (optional but recommended)
 docker pull ghcr.io/y2ktan/ai-form-registration:latest
 docker pull ghcr.io/y2ktan/ai-form-registration:init
 
-# 2. Stop and remove old container
+# 4. Stop and remove the old app container
 docker stop ai-form-registration
 docker rm ai-form-registration
 
-# 3. Run database updates (migrations & seed) BEFORE starting the new app
+# 5. Run database updates (migrations & seed) BEFORE starting the new app
 # This connects to the same volume and updates the DB schema
 docker run --rm \
   -e DATABASE_URL="file:/app/data/dev.db" \
+  -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
   -v ai-form-registration_db:/app/data \
-  ghcr.io/y2ktan/ai-form-registration:init
+  ghcr.io/y2ktan/ai-form-registration:init-$VERSION
 
-# 4. Run the new app
+# 6. Start the new app container from the versioned image
 docker run -d \
   --name ai-form-registration \
   --restart unless-stopped \
@@ -115,13 +169,32 @@ docker run -d \
   -e DATABASE_URL="file:/app/data/dev.db" \
   -e JWT_SECRET="your-jwt-secret" \
   -e INITIAL_ADMIN_PASSWORD="your-admin-password" \
-  -e NEXTAUTH_URL="https://yourdomain.com" \
+  -e APP_URL="https://yourdomain.com" \
   -e GOOGLE_SHEETS_ENCRYPTION_KEY="your-encryption-key" \
   -e CRON_SECRET="your-cron-secret" \
+  -e NEXT_PUBLIC_TURNSTILE_SITE_KEY="your-turnstile-site-key" \
+  -e TURNSTILE_SECRET_KEY="your-turnstile-secret-key" \
   -v ai-form-registration_db:/app/data \
   -v ai-form-registration_uploads:/app/public/uploads \
   -v ai-form-registration_fonts:/app/public/fonts \
-  ghcr.io/y2ktan/ai-form-registration:latest
+  ghcr.io/y2ktan/ai-form-registration:$VERSION
+
+# 7. Verify the new container is healthy
+docker ps
+docker logs --tail=100 ai-form-registration
+```
+
+### Fast VPS sync commands
+
+If you already have the env values and just want the shortest VPS update path, this is the core sequence:
+
+```bash
+export VERSION=2026.04.26-1
+docker pull ghcr.io/y2ktan/ai-form-registration:$VERSION
+docker pull ghcr.io/y2ktan/ai-form-registration:init-$VERSION
+docker stop ai-form-registration && docker rm ai-form-registration
+docker run --rm -e DATABASE_URL="file:/app/data/dev.db" -e INITIAL_ADMIN_PASSWORD="your-admin-password" -v ai-form-registration_db:/app/data ghcr.io/y2ktan/ai-form-registration:init-$VERSION
+docker run -d --name ai-form-registration --restart unless-stopped -p 3000:3000 -e DATABASE_URL="file:/app/data/dev.db" -e JWT_SECRET="your-jwt-secret" -e INITIAL_ADMIN_PASSWORD="your-admin-password" -e APP_URL="https://yourdomain.com" -e GOOGLE_SHEETS_ENCRYPTION_KEY="your-encryption-key" -e CRON_SECRET="your-cron-secret" -e NEXT_PUBLIC_TURNSTILE_SITE_KEY="your-turnstile-site-key" -e TURNSTILE_SECRET_KEY="your-turnstile-secret-key" -v ai-form-registration_db:/app/data -v ai-form-registration_uploads:/app/public/uploads -v ai-form-registration_fonts:/app/public/fonts ghcr.io/y2ktan/ai-form-registration:$VERSION
 ```
 
 ---
@@ -135,6 +208,7 @@ docker run -d \
   - `ai-form-registration_fonts` → custom fonts (`/app/public/fonts`)
 * **No `docker volume create` needed**: Docker auto-creates named volumes on first `docker run -v`.
 * **The `init` Image**: A one-off container (`--rm`) that runs `prisma db push` and `prisma db seed`, then exits. Use it whenever DB schema changes.
+* **Versioned Tags**: Deploy with an immutable tag like `2026.04.26-1`, then optionally also push `latest` as a convenience alias. The VPS should pull and run the versioned tag you intend to release.
 
 ---
 

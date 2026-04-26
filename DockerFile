@@ -47,9 +47,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 # ENV NEXT_TELEMETRY_DISABLED=1
 
-# Google Sheets sync (set at runtime via docker run -e)
-# GOOGLE_SHEETS_ENCRYPTION_KEY — AES key for encrypting service account credentials
+# Runtime env vars are injected at docker run time.
+# APP_URL — canonical external URL used for absolute export links
+# JWT_SECRET — session signing secret
+# INITIAL_ADMIN_PASSWORD — seed password for the bootstrap admin
+# GOOGLE_SHEETS_ENCRYPTION_KEY — AES key for Google credentials and messaging bearer token encryption
 # CRON_SECRET — secret token to protect /api/cron/google-sheets-sync endpoint
+# NEXT_PUBLIC_TURNSTILE_SITE_KEY / TURNSTILE_SECRET_KEY — optional bot protection for login
 
 RUN groupadd --system --gid 1001 nodejs
 RUN useradd --system --uid 1001 --gid nodejs -m nextjs

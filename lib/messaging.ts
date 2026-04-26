@@ -145,7 +145,9 @@ export async function uploadWaMedia(
   const url = waApiUrl(config, "/api/media/upload");
 
   const formData = new FormData();
-  const blob = new Blob([fileBuffer], { type: mimeType });
+  const fileArrayBuffer = new ArrayBuffer(fileBuffer.byteLength);
+  new Uint8Array(fileArrayBuffer).set(fileBuffer);
+  const blob = new Blob([fileArrayBuffer], { type: mimeType });
   formData.append("files", blob, filename);
 
   console.log("[WA-API] ── uploadMedia START ──");
