@@ -3568,7 +3568,21 @@ function FormBuilderPageInner() {
                       <span className="flex-1 truncate text-sm text-gray-700">{form.headerMediaId}</span>
                       <button
                         type="button"
-                        onClick={() => setForm({ ...form, headerMediaId: null })}
+                        onClick={async () => {
+                          const id = form.headerMediaId;
+                          if (!id) return;
+                          // Optimistic clear — UX never blocked by external API
+                          setForm({ ...form, headerMediaId: null });
+                          try {
+                            const res = await fetch(
+                              `/api/admin/messaging/media/${encodeURIComponent(id)}`,
+                              { method: "DELETE" },
+                            );
+                            if (!res.ok) console.warn("[Media] Failed to delete media:", id);
+                          } catch (err) {
+                            console.warn("[Media] Delete request failed:", err);
+                          }
+                        }}
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-500"
                         title="Remove header image"
                       >

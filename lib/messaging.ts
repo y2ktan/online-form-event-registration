@@ -3,6 +3,7 @@
  *
  * sendConfirmation         — sends confirmation via TC_WA REST API
  * uploadWaMedia            — uploads media via TC_WA REST API
+ * deleteWaMedia            — deletes media via TC_WA REST API
  * fireAndForgetConfirmation — async non-blocking wrapper
  * getMessagingConfig       — fetch global config (cached per request)
  */
@@ -50,7 +51,7 @@ export async function getMessagingConfig(): Promise<MessagingConfig | null> {
     // Decrypt WA API bearer token
     let bearerToken = "";
     try {
-      bearerToken = decryptKey(config.waApiBearerToken);
+      bearerToken = decryptKey(config.waApiBearerToken).replace(/^Bearer\s+/i, "").trim();
     } catch {
       console.error("[Messaging] Failed to decrypt WA API bearer token");
       return null;
@@ -100,7 +101,10 @@ export async function sendConfirmation(
 
   console.log("[WA-API] ── sendConfirmation START ──");
   console.log("[WA-API]   url:", url);
-  console.log("[WA-API]   bearer:", config.waApiBearerToken);
+  console.log("[WA-API]   bearer length:", config.waApiBearerToken.length);
+  console.log("[WA-API]   bearer first20:", config.waApiBearerToken.slice(0, 20));
+  console.log("[WA-API]   bearer last20:", config.waApiBearerToken.slice(-20));
+  console.log("[WA-API]   bearer has whitespace:", /\s/.test(config.waApiBearerToken));
   console.log("[WA-API]   recipients:", recipients.length);
   console.log("[WA-API]   templateNumber:", templateNumber);
 
@@ -172,6 +176,42 @@ export async function uploadWaMedia(
       return { success: false, error: "No media ID in response" };
     }
     return { success: true, mediaId };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[WA-API]   error:", msg);
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Delete media from the TC_WA REST API.
+ * DELETE /api/media/{id}
+ */
+export async function deleteWaMedia(
+  config: MessagingConfig,
+  mediaId: string,
+): Promise<{ success: boolean; status?: number; error?: string }> {
+  const url = waApiUrl(config, `/api/media/${encodeURIComponent(mediaId)}`);
+
+  console.log("[WA-API] ── deleteMedia START ──");
+  console.log("[WA-API]   url:", url);
+
+  try {
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${config.waApiBearerToken}`,
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    });
+    const body = await res.text();
+    console.log("[WA-API]   status:", res.status);
+    console.log("[WA-API]   body:", body);
+    console.log("[WA-API] ── deleteMedia END ──");
+    if (!res.ok) {
+      return { success: false, status: res.status, error: `Delete failed (${res.status}): ${body}` };
+    }
+    return { success: true, status: res.status };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[WA-API]   error:", msg);
